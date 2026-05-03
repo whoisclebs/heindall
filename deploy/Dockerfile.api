@@ -1,0 +1,16 @@
+FROM golang:1.23.6-alpine AS build
+WORKDIR /src/apps/api
+COPY apps/api/go.mod ./
+RUN go mod download
+COPY apps/api ./
+RUN go build -trimpath -ldflags='-s -w' -o /out/heindall-api ./cmd/api
+RUN go build -trimpath -ldflags='-s -w' -o /out/heindall-preprocess ./cmd/preprocess
+
+FROM alpine:3.20
+RUN adduser -D -H -u 10001 appuser
+WORKDIR /app
+COPY --from=build /out/heindall-api /usr/local/bin/heindall-api
+COPY --from=build /out/heindall-preprocess /usr/local/bin/heindall-preprocess
+USER appuser
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/heindall-api"]

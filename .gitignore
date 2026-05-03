@@ -1,0 +1,28 @@
+# Build artifacts
+bin/
+dist/
+target/
+*.exe
+*.test
+*.out
+
+# Go
+coverage.out
+go.work
+go.work.sum
+
+# Environment/local config
+.env
+.env.*
+!.env.example
+
+# Logs and temp files
+*.log
+tmp/
+.tmp/
+
+# Editor/OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

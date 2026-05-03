@@ -1,0 +1,13 @@
+FROM rust:1.75-alpine AS build
+WORKDIR /src
+RUN apk add --no-cache musl-dev
+COPY apps/load-balancer/Cargo.toml ./apps/load-balancer/Cargo.toml
+COPY apps/load-balancer/src ./apps/load-balancer/src
+RUN cargo build --release --manifest-path apps/load-balancer/Cargo.toml
+
+FROM alpine:3.20
+RUN adduser -D -H -u 10001 appuser
+COPY --from=build /src/apps/load-balancer/target/release/heindall-lb /usr/local/bin/heindall-lb
+USER appuser
+EXPOSE 9999
+ENTRYPOINT ["/usr/local/bin/heindall-lb"]
