@@ -9,6 +9,8 @@ import (
 	"unsafe"
 )
 
+var mmapPreloadSink byte
+
 func loadBinaryIndex(path string) (*QuantizedIndex, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -29,7 +31,22 @@ func loadBinaryIndex(path string) (*QuantizedIndex, error) {
 	if err != nil {
 		return nil, err
 	}
+	preloadMmap(data)
 	return loadIVFBinaryIndexMmap(data, header)
+}
+
+func preloadMmap(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	_ = syscall.Madvise(data, syscall.MADV_WILLNEED)
+	var sum byte
+	for offset := 0; offset < len(data); offset += 4096 {
+		sum ^= data[offset]
+	}
+	sum ^= data[len(data)-1]
+	mmapPreloadSink ^= sum
+	_ = syscall.Madvise(data, syscall.MADV_RANDOM)
 }
 
 func loadIVFBinaryIndexMmap(data []byte, header binaryHeader) (*QuantizedIndex, error) {
