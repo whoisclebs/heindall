@@ -28,7 +28,7 @@ func LoadConfig() Config {
 		BodyLimitBytes:    int64(getenvInt("BODY_LIMIT_BYTES", 16<<10)),
 		IndexPath:         os.Getenv("INDEX_PATH"),
 		ReferencesPath:    getenv("REFERENCES_PATH", "resources/references.json.gz"),
-		ANNMinCandidates:  getenvInt("ANN_MIN_CANDIDATES", 8192),
+		ANNMinCandidates:  getenvInt("ANN_MIN_CANDIDATES", 128),
 	}
 }
 

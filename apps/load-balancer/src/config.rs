@@ -4,6 +4,7 @@ use std::env;
 pub struct Config {
     pub bind_addr: String,
     pub upstreams: Vec<String>,
+    pub pool_size: usize,
 }
 
 impl Config {
@@ -20,8 +21,16 @@ impl Config {
         if upstreams.is_empty() {
             panic!("UPSTREAMS must contain at least one upstream");
         }
+        let pool_size = env::var("UPSTREAM_POOL_SIZE")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(32);
 
-        Self { bind_addr, upstreams }
+        Self {
+            bind_addr,
+            upstreams,
+            pool_size,
+        }
     }
 }
 
@@ -36,5 +45,6 @@ mod tests {
         let cfg = Config::from_env();
         assert_eq!(cfg.bind_addr, "0.0.0.0:9999");
         assert_eq!(cfg.upstreams, vec!["api1:8080", "api2:8080"]);
+        assert_eq!(cfg.pool_size, 32);
     }
 }

@@ -1,35 +1,30 @@
 mod config;
 mod proxy;
 mod round_robin;
+mod upstream;
 
-use std::net::TcpListener;
 use std::sync::Arc;
-use std::thread;
 
 use config::Config;
 use proxy::Proxy;
-use round_robin::RoundRobin;
+use upstream::UpstreamPool;
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()?
+        .block_on(async_main())
+}
+
+async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env();
-    let listener = TcpListener::bind(&config.bind_addr)?;
-    let balancer = Arc::new(RoundRobin::new(config.upstreams));
-
-    for stream in listener.incoming() {
-        let client = match stream {
-            Ok(stream) => stream,
-            Err(err) => {
-                eprintln!("accept error: {err}");
-                continue;
-            }
-        };
-        let proxy = Proxy::new(Arc::clone(&balancer));
-        thread::spawn(move || {
-            if let Err(err) = proxy.handle(client) {
-                eprintln!("proxy error: {err}");
-            }
-        });
+    let mut upstreams = Vec::with_capacity(config.upstreams.len());
+    for upstream in &config.upstreams {
+        upstreams.push(Arc::new(UpstreamPool::new(upstream, config.pool_size)?));
     }
 
+    let proxy = Arc::new(Proxy::new(upstreams));
+    proxy.serve(&config.bind_addr).await?;
     Ok(())
 }

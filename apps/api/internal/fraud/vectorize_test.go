@@ -20,6 +20,24 @@ func TestVectorizeLegitDocumentationExample(t *testing.T) {
 	assertVectorNear(t, got, want, 0.0001)
 }
 
+func TestVectorizeJSONMatchesStructVectorizer(t *testing.T) {
+	payload := []byte(`{"id":"tx-1329056812","transaction":{"amount":41.12,"installments":2,"requested_at":"2026-03-11T18:45:53Z"},"customer":{"avg_amount":82.24,"tx_count_24h":3,"known_merchants":["MERC-003","MERC-016"]},"merchant":{"id":"MERC-016","mcc":"5411","avg_amount":60.25},"terminal":{"is_online":false,"card_present":true,"km_from_home":29.23},"last_transaction":null}`)
+	req := TransactionRequest{
+		ID:          "tx-1329056812",
+		Transaction: Transaction{Amount: 41.12, Installments: 2, RequestedAt: mustTime(t, "2026-03-11T18:45:53Z")},
+		Customer:    Customer{AvgAmount: 82.24, TxCount24h: 3, KnownMerchants: []string{"MERC-003", "MERC-016"}},
+		Merchant:    Merchant{ID: "MERC-016", MCC: "5411", AvgAmount: 60.25},
+		Terminal:    Terminal{IsOnline: false, CardPresent: true, KmFromHome: 29.23},
+	}
+
+	got, ok := VectorizeJSON(payload, DefaultNormalization(), DefaultMCCRisk())
+	if !ok {
+		t.Fatal("VectorizeJSON returned false")
+	}
+	want := Vectorize(req, DefaultNormalization(), DefaultMCCRisk())
+	assertVectorNear(t, got, want, 0.0001)
+}
+
 func TestVectorizeFraudDocumentationExample(t *testing.T) {
 	req := TransactionRequest{
 		ID:          "tx-3330991687",

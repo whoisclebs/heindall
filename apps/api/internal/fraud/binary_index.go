@@ -45,18 +45,34 @@ func WriteBinaryIndex(path string, refs []Reference) error {
 }
 
 func LoadBinaryIndex(path string, minCandidates int) (*QuantizedIndex, error) {
+	return loadBinaryIndex(path, minCandidates)
+}
+
+func readBinaryHeader(f *os.File) (binaryHeader, error) {
+	var header binaryHeader
+	if err := binary.Read(f, binary.LittleEndian, &header); err != nil {
+		return binaryHeader{}, err
+	}
+	if header.Magic != binaryMagic || header.Version != 1 || header.Dimensions != Dimensions || header.Scale != int32(QuantScale) {
+		return binaryHeader{}, fmt.Errorf("unsupported index format")
+	}
+	return header, nil
+}
+
+func binaryHeaderSize() int {
+	return binary.Size(binaryHeader{})
+}
+
+func loadBinaryIndexHeap(path string, minCandidates int) (*QuantizedIndex, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	var header binaryHeader
-	if err := binary.Read(f, binary.LittleEndian, &header); err != nil {
+	header, err := readBinaryHeader(f)
+	if err != nil {
 		return nil, err
-	}
-	if header.Magic != binaryMagic || header.Version != 1 || header.Dimensions != Dimensions || header.Scale != int32(QuantScale) {
-		return nil, fmt.Errorf("unsupported index format")
 	}
 
 	count := int(header.Count)

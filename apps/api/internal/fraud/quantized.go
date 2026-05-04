@@ -5,8 +5,10 @@ const QuantScale int16 = 10000
 type QuantizedIndex struct {
 	Vectors       []int16
 	Labels        []uint8
-	Buckets       map[uint64][]uint32
+	BucketOffsets []uint32
+	BucketItems   []uint32
 	MinCandidates int
+	mmap          []byte
 }
 
 func NewQuantizedIndex(vectors []int16, labels []uint8, minCandidates int) *QuantizedIndex {
@@ -16,7 +18,6 @@ func NewQuantizedIndex(vectors []int16, labels []uint8, minCandidates int) *Quan
 	idx := &QuantizedIndex{
 		Vectors:       vectors,
 		Labels:        labels,
-		Buckets:       make(map[uint64][]uint32, len(labels)/64),
 		MinCandidates: minCandidates,
 	}
 	idx.buildBuckets()
@@ -65,7 +66,7 @@ func (idx *QuantizedIndex) searchBuckets(query [Dimensions]int16) (frauds int, v
 	b7 := bucket(query[7])
 	b12 := bucket(query[12])
 
-	for radius := int16(0); radius <= 2 && visited < idx.MinCandidates; radius++ {
+	for radius := int16(0); radius <= 15 && visited < idx.MinCandidates; radius++ {
 		for d0 := -radius; d0 <= radius; d0++ {
 			for d2 := -radius; d2 <= radius; d2++ {
 				for d7 := -radius; d7 <= radius; d7++ {
@@ -73,10 +74,15 @@ func (idx *QuantizedIndex) searchBuckets(query [Dimensions]int16) (frauds int, v
 						if radius > 0 && abs16(d0) < radius && abs16(d2) < radius && abs16(d7) < radius && abs16(d12) < radius {
 							continue
 						}
-						key := packedBucketKey(b0+d0, b2+d2, b7+d7, b12+d12)
-						for _, pos := range idx.Buckets[key] {
+						bucket := packedBucketKey(b0+d0, b2+d2, b7+d7, b12+d12)
+						start := idx.BucketOffsets[bucket]
+						end := idx.BucketOffsets[bucket+1]
+						for _, pos := range idx.BucketItems[start:end] {
 							idx.offer(query, pos, &bestDist, &bestFraud)
 							visited++
+							if visited >= idx.MinCandidates {
+								return countFrauds(bestFraud), visited
+							}
 						}
 					}
 				}
@@ -88,10 +94,28 @@ func (idx *QuantizedIndex) searchBuckets(query [Dimensions]int16) (frauds int, v
 
 func (idx *QuantizedIndex) buildBuckets() {
 	count := len(idx.Labels)
+	const buckets = 16 * 16 * 16 * 16
+	counts := make([]uint32, buckets)
+
+	for i := 0; i < count; i++ {
+		vec := idx.Vectors[i*Dimensions : (i+1)*Dimensions]
+		counts[bucketKey(vec[0], vec[2], vec[7], vec[12])]++
+	}
+
+	idx.BucketOffsets = make([]uint32, buckets+1)
+	for i := 0; i < buckets; i++ {
+		idx.BucketOffsets[i+1] = idx.BucketOffsets[i] + counts[i]
+	}
+
+	idx.BucketItems = make([]uint32, count)
+	cursors := make([]uint32, buckets)
+	copy(cursors, idx.BucketOffsets[:buckets])
 	for i := 0; i < count; i++ {
 		vec := idx.Vectors[i*Dimensions : (i+1)*Dimensions]
 		key := bucketKey(vec[0], vec[2], vec[7], vec[12])
-		idx.Buckets[key] = append(idx.Buckets[key], uint32(i))
+		pos := cursors[key]
+		idx.BucketItems[pos] = uint32(i)
+		cursors[key]++
 	}
 }
 
@@ -147,12 +171,12 @@ func countFrauds(bestFraud [5]bool) int {
 	return frauds
 }
 
-func bucketKey(v0, v2, v7, v12 int16) uint64 {
+func bucketKey(v0, v2, v7, v12 int16) uint16 {
 	return packedBucketKey(bucket(v0), bucket(v2), bucket(v7), bucket(v12))
 }
 
-func packedBucketKey(b0, b2, b7, b12 int16) uint64 {
-	return uint64(clampBucket(b0))<<24 | uint64(clampBucket(b2))<<16 | uint64(clampBucket(b7))<<8 | uint64(clampBucket(b12))
+func packedBucketKey(b0, b2, b7, b12 int16) uint16 {
+	return uint16(clampBucket(b0))<<12 | uint16(clampBucket(b2))<<8 | uint16(clampBucket(b7))<<4 | uint16(clampBucket(b12))
 }
 
 func bucket(v int16) int16 {

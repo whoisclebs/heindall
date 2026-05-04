@@ -21,7 +21,7 @@ services:
       PORT: 8080
       INDEX_PATH: /data/index.heindall.bin
       REFERENCES_PATH: /data/references.json.gz
-      ANN_MIN_CANDIDATES: 8192
+      ANN_MIN_CANDIDATES: 128
     volumes:
       - ./data:/data:ro
     deploy:

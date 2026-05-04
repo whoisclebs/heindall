@@ -14,9 +14,21 @@ func NewService(norm Normalization, mccRisk map[string]float64, search Searcher)
 	return &Service{norm: norm, mccRisk: mccRisk, search: search}
 }
 
-func (s *Service) Score(req TransactionRequest) ScoreResponse {
+func (s *Service) FraudCount(req TransactionRequest) int {
 	query := Vectorize(req, s.norm, s.mccRisk)
-	frauds := s.search.Search5(query)
+	return s.search.Search5(query)
+}
+
+func (s *Service) FraudCountJSON(data []byte) (int, bool) {
+	query, ok := VectorizeJSON(data, s.norm, s.mccRisk)
+	if !ok {
+		return 0, false
+	}
+	return s.search.Search5(query), true
+}
+
+func (s *Service) Score(req TransactionRequest) ScoreResponse {
+	frauds := s.FraudCount(req)
 	score := float64(frauds) / 5.0
 	return ScoreResponse{
 		Approved:   score < 0.6,
