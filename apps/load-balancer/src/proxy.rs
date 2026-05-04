@@ -100,18 +100,17 @@ impl Proxy {
             ));
         }
 
-        if read_http_message(&mut upstream, response, UPSTREAM_IO_TIMEOUT)
-            .await
-            .is_err()
-        {
-            return Err(io::Error::new(
+        match read_http_message(&mut upstream, response, UPSTREAM_IO_TIMEOUT).await {
+            Ok(true) => {
+                pool.release(upstream);
+                Ok(())
+            }
+            Ok(false) => Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                "upstream read failed",
-            ));
+                "upstream closed before response headers",
+            )),
+            Err(err) => Err(err),
         }
-
-        pool.release(upstream);
-        Ok(())
     }
 }
 
@@ -149,12 +148,8 @@ async fn read_some_timeout(
     out: &mut Vec<u8>,
     read_timeout: Duration,
 ) -> io::Result<usize> {
-    let mut buffer = [0_u8; BUFFER_SIZE];
-    let n = timeout(read_timeout, stream.read(&mut buffer)).await??;
-    if n > 0 {
-        out.extend_from_slice(&buffer[..n]);
-    }
-    Ok(n)
+    out.reserve(BUFFER_SIZE);
+    timeout(read_timeout, stream.read_buf(out)).await?
 }
 
 async fn write_all_timeout(stream: &mut TcpStream, bytes: &[u8]) -> io::Result<()> {

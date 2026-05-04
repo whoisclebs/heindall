@@ -74,7 +74,7 @@ func (idx *QuantizedIndex) searchBuckets(query [Dimensions]int16) (frauds int, v
 						if radius > 0 && abs16(d0) < radius && abs16(d2) < radius && abs16(d7) < radius && abs16(d12) < radius {
 							continue
 						}
-						bucket := packedBucketKey(b0+d0, b2+d2, b7+d7, b12+d12)
+						bucket := int(packedBucketKey(b0+d0, b2+d2, b7+d7, b12+d12))
 						start := idx.BucketOffsets[bucket]
 						end := idx.BucketOffsets[bucket+1]
 						for _, pos := range idx.BucketItems[start:end] {

@@ -164,11 +164,18 @@ func knownMerchantJSON(data, merchantID []byte, start, end int) bool {
 		return false
 	}
 	section := data[sectionStart : sectionStart+sectionEnd]
-	needle := make([]byte, 0, len(merchantID)+2)
-	needle = append(needle, '"')
-	needle = append(needle, merchantID...)
-	needle = append(needle, '"')
-	return bytes.Contains(section, needle)
+	searchStart := 0
+	for {
+		idx := bytes.Index(section[searchStart:], merchantID)
+		if idx < 0 {
+			return false
+		}
+		pos := searchStart + idx
+		if pos > 0 && section[pos-1] == '"' && pos+len(merchantID) < len(section) && section[pos+len(merchantID)] == '"' {
+			return true
+		}
+		searchStart = pos + 1
+	}
 }
 
 func mccRiskValueBytes(mcc []byte, risk map[string]float64) float64 {
