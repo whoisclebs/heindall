@@ -1,0 +1,10 @@
+{
+  "participants": ["Clebson Augusto Fonseca"],
+  "social": [
+    "https://github.com/whoisclebs",
+    "https://www.linkedin.com/in/whoisclebs"
+  ],
+  "source-code-repo": "https://github.com/whoisclebs/heindall",
+  "stack": ["Go", "Golpher", "Rust", "Docker"],
+  "open_to_work": false
+}

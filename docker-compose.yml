@@ -1,0 +1,39 @@
+services:
+  lb:
+    image: ghcr.io/whoisclebs/heindall-lb:latest
+    platform: linux/amd64
+    environment:
+      BIND_ADDR: 0.0.0.0:9999
+      UPSTREAMS: api1:8080,api2:8080
+    ports:
+      - "9999:9999"
+    depends_on:
+      - api1
+      - api2
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: "24MB"
+
+  api1: &api
+    image: ghcr.io/whoisclebs/heindall-api:latest
+    platform: linux/amd64
+    environment:
+      PORT: 8080
+      ANN_NPROBE: ${ANN_NPROBE:-8}
+      ANN_AMBIGUOUS_NPROBE: ${ANN_AMBIGUOUS_NPROBE:-32}
+      ANN_REPAIR: ${ANN_REPAIR:-true}
+    deploy:
+      resources:
+        limits:
+          cpus: "0.45"
+          memory: "160MB"
+
+  api2:
+    <<: *api
+    depends_on: []
+
+networks:
+  default:
+    driver: bridge
