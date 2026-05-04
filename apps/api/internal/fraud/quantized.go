@@ -3,25 +3,22 @@ package fraud
 const QuantScale int16 = 10000
 
 type QuantizedIndex struct {
-	Vectors       []int16
-	Labels        []uint8
-	BucketOffsets []uint32
-	BucketItems   []uint32
-	MinCandidates int
-	mmap          []byte
+	Vectors []int16
+	Labels  []uint8
+	IVF     IVFMetadata
+	mmap    []byte
 }
 
-func NewQuantizedIndex(vectors []int16, labels []uint8, minCandidates int) *QuantizedIndex {
-	if minCandidates <= 0 {
-		minCandidates = 8192
-	}
-	idx := &QuantizedIndex{
-		Vectors:       vectors,
-		Labels:        labels,
-		MinCandidates: minCandidates,
-	}
-	idx.buildBuckets()
-	return idx
+type IVFMetadata struct {
+	Clusters        int
+	Centroids       []int16
+	ListOffsets     []uint32
+	BBoxMin         []int16
+	BBoxMax         []int16
+	OrigIDs         []uint32
+	NProbe          int
+	AmbiguousNProbe int
+	Repair          bool
 }
 
 func QuantizeVector(vector [Dimensions]float32) [Dimensions]int16 {
@@ -51,113 +48,134 @@ func LabelByte(label string) uint8 {
 
 func (idx *QuantizedIndex) Search5(query [Dimensions]float32) int {
 	q := QuantizeVector(query)
-	frauds, visited := idx.searchBuckets(q)
-	if visited == 0 {
-		return idx.searchAll(q)
-	}
-	return frauds
+	return idx.Search5Quantized(q)
 }
 
-func (idx *QuantizedIndex) searchBuckets(query [Dimensions]int16) (frauds int, visited int) {
-	bestDist := [5]int64{1<<62 - 1, 1<<62 - 1, 1<<62 - 1, 1<<62 - 1, 1<<62 - 1}
-	bestFraud := [5]bool{}
-	b0 := bucket(query[0])
-	b2 := bucket(query[2])
-	b7 := bucket(query[7])
-	b12 := bucket(query[12])
-
-	for radius := int16(0); radius <= 15 && visited < idx.MinCandidates; radius++ {
-		for d0 := -radius; d0 <= radius; d0++ {
-			for d2 := -radius; d2 <= radius; d2++ {
-				for d7 := -radius; d7 <= radius; d7++ {
-					for d12 := -radius; d12 <= radius; d12++ {
-						if radius > 0 && abs16(d0) < radius && abs16(d2) < radius && abs16(d7) < radius && abs16(d12) < radius {
-							continue
-						}
-						bucket := int(packedBucketKey(b0+d0, b2+d2, b7+d7, b12+d12))
-						start := idx.BucketOffsets[bucket]
-						end := idx.BucketOffsets[bucket+1]
-						for _, pos := range idx.BucketItems[start:end] {
-							idx.offer(query, pos, &bestDist, &bestFraud)
-							visited++
-							if visited >= idx.MinCandidates {
-								return countFrauds(bestFraud), visited
-							}
-						}
-					}
-				}
-			}
-		}
+func (idx *QuantizedIndex) Search5Quantized(query [Dimensions]int16) int {
+	if !idx.hasIVF() {
+		return 0
 	}
-	return countFrauds(bestFraud), visited
+	return idx.searchIVF(query)
 }
 
-func (idx *QuantizedIndex) buildBuckets() {
-	count := len(idx.Labels)
-	const buckets = 16 * 16 * 16 * 16
-	counts := make([]uint32, buckets)
-
-	for i := 0; i < count; i++ {
-		vec := idx.Vectors[i*Dimensions : (i+1)*Dimensions]
-		counts[bucketKey(vec[0], vec[2], vec[7], vec[12])]++
+func NewIVFQuantizedIndex(vectors []int16, labels []uint8, ivf IVFMetadata) *QuantizedIndex {
+	idx := &QuantizedIndex{
+		Vectors: vectors,
+		Labels:  labels,
+		IVF:     ivf,
 	}
-
-	idx.BucketOffsets = make([]uint32, buckets+1)
-	for i := 0; i < buckets; i++ {
-		idx.BucketOffsets[i+1] = idx.BucketOffsets[i] + counts[i]
-	}
-
-	idx.BucketItems = make([]uint32, count)
-	cursors := make([]uint32, buckets)
-	copy(cursors, idx.BucketOffsets[:buckets])
-	for i := 0; i < count; i++ {
-		vec := idx.Vectors[i*Dimensions : (i+1)*Dimensions]
-		key := bucketKey(vec[0], vec[2], vec[7], vec[12])
-		pos := cursors[key]
-		idx.BucketItems[pos] = uint32(i)
-		cursors[key]++
-	}
+	idx.normalizeIVFDefaults()
+	return idx
 }
 
-func (idx *QuantizedIndex) searchAll(query [Dimensions]int16) int {
-	bestDist := [5]int64{1<<62 - 1, 1<<62 - 1, 1<<62 - 1, 1<<62 - 1, 1<<62 - 1}
-	bestFraud := [5]bool{}
-	for i := range idx.Labels {
-		idx.offer(query, uint32(i), &bestDist, &bestFraud)
-	}
-	return countFrauds(bestFraud)
-}
-
-func (idx *QuantizedIndex) offer(query [Dimensions]int16, pos uint32, bestDist *[5]int64, bestFraud *[5]bool) {
-	start := int(pos) * Dimensions
-	d := quantizedDistance(query, idx.Vectors[start:start+Dimensions], bestDist[4])
-	if d >= bestDist[4] {
+func (idx *QuantizedIndex) SetIVFSearch(nprobe, ambiguousNProbe int, repair bool) {
+	if !idx.hasIVF() {
 		return
 	}
-	fraud := idx.Labels[pos] == 1
-	for i := 0; i < 5; i++ {
-		if d < bestDist[i] {
-			for j := 4; j > i; j-- {
-				bestDist[j] = bestDist[j-1]
-				bestFraud[j] = bestFraud[j-1]
-			}
-			bestDist[i] = d
-			bestFraud[i] = fraud
-			return
-		}
+	if nprobe > 0 {
+		idx.IVF.NProbe = nprobe
+	}
+	if ambiguousNProbe > 0 {
+		idx.IVF.AmbiguousNProbe = ambiguousNProbe
+	}
+	idx.IVF.Repair = repair
+	idx.normalizeIVFDefaults()
+}
+
+func (idx *QuantizedIndex) hasIVF() bool {
+	return idx.IVF.Clusters > 0 && len(idx.IVF.ListOffsets) == idx.IVF.Clusters+1 && len(idx.IVF.Centroids) >= idx.IVF.Clusters*Dimensions
+}
+
+func (idx *QuantizedIndex) normalizeIVFDefaults() {
+	if !idx.hasIVF() {
+		return
+	}
+	if idx.IVF.NProbe <= 0 {
+		idx.IVF.NProbe = 8
+	}
+	if idx.IVF.AmbiguousNProbe <= 0 {
+		idx.IVF.AmbiguousNProbe = idx.IVF.NProbe * 5
+	}
+	if idx.IVF.NProbe > idx.IVF.Clusters {
+		idx.IVF.NProbe = idx.IVF.Clusters
+	}
+	if idx.IVF.AmbiguousNProbe < idx.IVF.NProbe {
+		idx.IVF.AmbiguousNProbe = idx.IVF.NProbe
+	}
+	if idx.IVF.AmbiguousNProbe > idx.IVF.Clusters {
+		idx.IVF.AmbiguousNProbe = idx.IVF.Clusters
 	}
 }
 
 func quantizedDistance(query [Dimensions]int16, ref []int16, cutoff int64) int64 {
-	order := [...]int{5, 6, 2, 0, 7, 8, 12, 1, 3, 4, 9, 10, 11, 13}
 	var sum int64
-	for _, dim := range order {
-		d := int64(query[dim]) - int64(ref[dim])
-		sum += d * d
-		if sum >= cutoff {
-			return sum
-		}
+	d := int64(query[5]) - int64(ref[5])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
 	}
+	d = int64(query[6]) - int64(ref[6])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[2]) - int64(ref[2])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[0]) - int64(ref[0])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[7]) - int64(ref[7])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[8]) - int64(ref[8])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[12]) - int64(ref[12])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[1]) - int64(ref[1])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[3]) - int64(ref[3])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[4]) - int64(ref[4])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[9]) - int64(ref[9])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[10]) - int64(ref[10])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[11]) - int64(ref[11])
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[13]) - int64(ref[13])
+	sum += d * d
 	return sum
 }
 
@@ -169,36 +187,4 @@ func countFrauds(bestFraud [5]bool) int {
 		}
 	}
 	return frauds
-}
-
-func bucketKey(v0, v2, v7, v12 int16) uint16 {
-	return packedBucketKey(bucket(v0), bucket(v2), bucket(v7), bucket(v12))
-}
-
-func packedBucketKey(b0, b2, b7, b12 int16) uint16 {
-	return uint16(clampBucket(b0))<<12 | uint16(clampBucket(b2))<<8 | uint16(clampBucket(b7))<<4 | uint16(clampBucket(b12))
-}
-
-func bucket(v int16) int16 {
-	if v < 0 {
-		return 0
-	}
-	return v / 625 // 16 buckets over [0, 10000]
-}
-
-func clampBucket(v int16) uint8 {
-	if v < 0 {
-		return 0
-	}
-	if v > 15 {
-		return 15
-	}
-	return uint8(v)
-}
-
-func abs16(v int16) int16 {
-	if v < 0 {
-		return -v
-	}
-	return v
 }

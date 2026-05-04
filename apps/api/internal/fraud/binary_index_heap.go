@@ -2,6 +2,6 @@
 
 package fraud
 
-func loadBinaryIndex(path string, minCandidates int) (*QuantizedIndex, error) {
-	return loadBinaryIndexHeap(path, minCandidates)
+func loadBinaryIndex(path string) (*QuantizedIndex, error) {
+	return loadBinaryIndexHeap(path)
 }

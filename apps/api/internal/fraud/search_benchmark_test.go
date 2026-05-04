@@ -11,14 +11,10 @@ func BenchmarkQuantizedIndexSearch5(b *testing.B) {
 			refs[i].Label = LabelFraud
 		}
 	}
-	vectors := make([]int16, len(refs)*Dimensions)
-	labels := make([]uint8, len(refs))
-	for i, ref := range refs {
-		q := QuantizeVector(ref.Vector)
-		copy(vectors[i*Dimensions:(i+1)*Dimensions], q[:])
-		labels[i] = LabelByte(ref.Label)
+	idx, err := BuildIVFIndex(refs, IVFBuildOptions{Clusters: 256, NProbe: 8, AmbiguousNProbe: 32, Repair: true})
+	if err != nil {
+		b.Fatal(err)
 	}
-	idx := NewQuantizedIndex(vectors, labels, 512)
 	query := refs[len(refs)/2].Vector
 
 	b.ReportAllocs()

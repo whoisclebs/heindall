@@ -28,14 +28,14 @@ The compliant topology uses a deliberately dumb Rust proxy with simple round-rob
 
 Official datasets live in the Rinha repository under `resources/` and can be downloaded locally with `scripts/download-datasets.sh`.
 
-1. Prefer loading `index.heindall.bin` generated from `references.json.gz`; fallback to JSON exact search only for local fixtures.
+1. Load the embedded IVF v2 index generated from `references.json.gz`.
 2. Vectorize each request into 14 dimensions.
-3. Query a search engine that returns the 5 nearest labels.
+3. Query the IVF search engine that returns the 5 nearest labels.
 4. Return `approved = fraud_score < 0.6`.
 
 ## Performance roadmap
 
 1. Correct baseline: exact KNN over small datasets for tests.
 2. Quantized storage: store vectors as compact `int16` instead of JSON/float objects.
-3. Candidate pruning: grid buckets over high-signal dimensions (`amount`, `amount_vs_avg`, `km_from_home`, `mcc_risk`).
+3. IVF v2 index: cluster references into centroid lists, scan top probes, and use bounded repair for ambiguous cases.
 4. Hot path tuning: benchmark distance calculation; consider Go assembly/SIMD only if it beats compiler-generated code with measurable impact.

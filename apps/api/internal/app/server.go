@@ -43,7 +43,12 @@ func (s *Server) Listen() {
 
 func loadSearcher(cfg Config) (fraud.Searcher, error) {
 	if cfg.IndexPath != "" {
-		return fraud.LoadBinaryIndex(cfg.IndexPath, cfg.ANNMinCandidates)
+		idx, err := fraud.LoadBinaryIndex(cfg.IndexPath)
+		if err != nil {
+			return nil, err
+		}
+		idx.SetIVFSearch(cfg.ANNNProbe, cfg.ANNAmbiguousProbe, cfg.ANNRepair)
+		return idx, nil
 	}
 
 	refs, err := fraud.LoadReferences(cfg.ReferencesPath)
