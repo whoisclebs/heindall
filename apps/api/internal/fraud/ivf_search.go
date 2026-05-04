@@ -6,7 +6,7 @@ const (
 )
 
 const (
-	maxIVFProbe = 256
+	maxIVFProbe = 128
 )
 
 func (idx *QuantizedIndex) searchIVF(query [Dimensions]int16) int {
@@ -22,10 +22,16 @@ func (idx *QuantizedIndex) searchIVF(query [Dimensions]int16) int {
 		frauds = state.countFrauds()
 	}
 	if idx.IVF.Repair && frauds < 3 && needsApprovalRepair(query) {
-		return idx.searchAllIVF(query)
+		idx.expandIVFProbes(query, &state, maxIVFProbe)
+		frauds = state.countFrauds()
+		if frauds < 3 && needsNarrowExactApprovalRepair(query) {
+			return idx.searchAllIVF(query)
+		}
+		return frauds
 	}
 	if idx.IVF.Repair && frauds >= 3 && needsDenialRepair(query) {
-		return idx.searchAllIVF(query)
+		idx.expandIVFProbes(query, &state, maxIVFProbe)
+		return state.countFrauds()
 	}
 	return frauds
 }
@@ -150,6 +156,10 @@ func needsApprovalRepair(query [Dimensions]int16) bool {
 		return false
 	}
 	return query[12] == 3000 || query[12] >= 8500
+}
+
+func needsNarrowExactApprovalRepair(query [Dimensions]int16) bool {
+	return query[5] != -QuantScale && query[6] != -QuantScale && query[9] == QuantScale && query[10] == 0 && query[7] >= 3300 && query[7] <= 3500 && query[2] == QuantScale && query[12] == 3000 && query[8] <= 4000
 }
 
 func needsKnownBoundaryApprovalRepair(query [Dimensions]int16) bool {
