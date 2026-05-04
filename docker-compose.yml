@@ -1,9 +1,6 @@
 services:
   lb:
     image: ghcr.io/whoisclebs/heindall-lb:latest
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.lb
     environment:
       BIND_ADDR: 0.0.0.0:9999
       UPSTREAMS: api1:8080,api2:8080
@@ -20,9 +17,6 @@ services:
 
   api1: &api
     image: ghcr.io/whoisclebs/heindall-api:latest
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.api
     environment:
       PORT: 8080
       INDEX_PATH: /data/index.heindall.bin
