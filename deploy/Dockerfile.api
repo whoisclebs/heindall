@@ -3,8 +3,9 @@ WORKDIR /src/apps/api
 COPY apps/api/go.mod ./
 RUN go mod download
 COPY apps/api ./
-RUN GOAMD64=v3 go build -trimpath -ldflags='-s -w' -o /out/heindall-api ./cmd/api
-RUN GOAMD64=v3 go build -trimpath -ldflags='-s -w' -o /out/heindall-preprocess ./cmd/preprocess
+RUN CGO_ENABLED=0 GOAMD64=v3 go build -trimpath -ldflags='-s -w' -o /out/heindall-api ./cmd/api
+RUN CGO_ENABLED=0 GOAMD64=v3 go build -trimpath -ldflags='-s -w' -o /out/heindall-preprocess ./cmd/preprocess
+RUN CGO_ENABLED=0 GOAMD64=v3 go build -trimpath -ldflags='-s -w' -o /out/heindall-healthcheck ./cmd/healthcheck
 WORKDIR /src
 COPY data ./data
 RUN if [ ! -s data/index.heindall.ivf8192.bin ]; then \
@@ -17,12 +18,12 @@ RUN if [ ! -s data/index.heindall.ivf8192.bin ]; then \
         -repair=true; \
     fi && rm -f data/references.json.gz
 
-FROM --platform=linux/amd64 alpine:3.20
-RUN adduser -D -H -u 10001 appuser
+FROM --platform=linux/amd64 gcr.io/distroless/static-debian12
 WORKDIR /app
 COPY --from=build /src/data/index.heindall.ivf8192.bin /data/index.heindall.ivf8192.bin
 COPY --from=build /out/heindall-api /usr/local/bin/heindall-api
 COPY --from=build /out/heindall-preprocess /usr/local/bin/heindall-preprocess
-USER appuser
+COPY --from=build /out/heindall-healthcheck /usr/local/bin/heindall-healthcheck
+USER 10001:10001
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/heindall-api"]

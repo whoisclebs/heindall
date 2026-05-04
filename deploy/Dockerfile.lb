@@ -5,9 +5,8 @@ COPY apps/load-balancer/Cargo.toml ./apps/load-balancer/Cargo.toml
 COPY apps/load-balancer/src ./apps/load-balancer/src
 RUN cargo build --release --manifest-path apps/load-balancer/Cargo.toml
 
-FROM --platform=linux/amd64 alpine:3.20
-RUN adduser -D -H -u 10001 appuser
+FROM --platform=linux/amd64 gcr.io/distroless/static-debian12
 COPY --from=build /src/apps/load-balancer/target/release/heindall-lb /usr/local/bin/heindall-lb
-USER appuser
+USER 10001:10001
 EXPOSE 9999
 ENTRYPOINT ["/usr/local/bin/heindall-lb"]
