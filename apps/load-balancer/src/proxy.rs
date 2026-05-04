@@ -71,17 +71,24 @@ impl Proxy {
 
     async fn forward_with_retry(&self, request: &[u8], response: &mut Vec<u8>) -> io::Result<()> {
         let first = self.balancer.next();
-        match self.forward_once(first, request, response).await {
-            Ok(()) => Ok(()),
-            Err(err) if self.upstreams.len() > 1 => {
+        let mut last_err = None;
+
+        // Retry stale pooled sockets before surfacing a 502. The challenge
+        // endpoints are read-only/idempotent, so retrying a request is safe here.
+        for offset in 0..self.upstreams.len() {
+            let upstream_idx = (first + offset) % self.upstreams.len();
+            for _ in 0..2 {
                 response.clear();
-                let second = (first + 1) % self.upstreams.len();
-                self.forward_once(second, request, response)
-                    .await
-                    .map_err(|_| err)
+                match self.forward_once(upstream_idx, request, response).await {
+                    Ok(()) => return Ok(()),
+                    Err(err) => last_err = Some(err),
+                }
             }
-            Err(err) => Err(err),
         }
+
+        Err(last_err.unwrap_or_else(|| {
+            io::Error::new(io::ErrorKind::NotConnected, "no upstreams available")
+        }))
     }
 
     async fn forward_once(
