@@ -81,7 +81,10 @@ impl Proxy {
                 response.clear();
                 match self.forward_once(upstream_idx, request, response).await {
                     Ok(()) => return Ok(()),
-                    Err(err) => last_err = Some(err),
+                    Err(err) => {
+                        self.upstreams[upstream_idx].clear_idle();
+                        last_err = Some(err);
+                    }
                 }
             }
         }

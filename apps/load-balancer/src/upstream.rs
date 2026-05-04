@@ -42,4 +42,8 @@ impl UpstreamPool {
             idle.push(stream);
         }
     }
+
+    pub fn clear_idle(&self) {
+        self.idle.lock().expect("pool mutex").clear();
+    }
 }
