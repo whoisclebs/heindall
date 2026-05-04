@@ -28,12 +28,12 @@ services:
       ANN_REPAIR: ${ANN_REPAIR:-true}
       GOMAXPROCS: ${GOMAXPROCS:-1}
       GOMEMLIMIT: ${GOMEMLIMIT:-128MiB}
-      GOGC: ${GOGC:-200}
+      GOGC: ${GOGC:-1000}
     healthcheck:
       test: ["CMD", "/usr/local/bin/heindall-healthcheck"]
-      interval: 1s
+      interval: 10s
       timeout: 1s
-      retries: 180
+      retries: 18
       start_period: 1s
     deploy:
       resources:
