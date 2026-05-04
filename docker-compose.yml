@@ -1,6 +1,6 @@
 services:
   lb:
-    image: ghcr.io/whoisclebs/heindall-lb:ae6f001e408235527db80a89123ef8461805d475
+    image: ghcr.io/whoisclebs/heindall-lb:26419bd00cc5bd2da3f534c3398007258b156336
     platform: linux/amd64
     environment:
       BIND_ADDR: 0.0.0.0:9999
@@ -17,7 +17,7 @@ services:
           memory: "24MB"
 
   api1: &api
-    image: ghcr.io/whoisclebs/heindall-api:ae6f001e408235527db80a89123ef8461805d475
+    image: ghcr.io/whoisclebs/heindall-api:26419bd00cc5bd2da3f534c3398007258b156336
     platform: linux/amd64
     environment:
       PORT: 8080
