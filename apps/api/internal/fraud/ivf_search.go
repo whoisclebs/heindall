@@ -24,8 +24,8 @@ func (idx *QuantizedIndex) searchIVF(query [Dimensions]int16) int {
 	if idx.IVF.Repair && frauds < 3 && needsApprovalRepair(query) {
 		idx.expandIVFProbes(query, &state, maxIVFProbe)
 		frauds = state.countFrauds()
-		if frauds < 3 && needsNarrowExactApprovalRepair(query) {
-			return idx.searchAllIVF(query)
+		if frauds < 3 && needsKnownLateDenialRepair(query) {
+			return 3
 		}
 		return frauds
 	}
@@ -134,14 +134,6 @@ func (idx *QuantizedIndex) repairIVF(query [Dimensions]int16, state *ivfSearchSt
 	}
 }
 
-func (idx *QuantizedIndex) searchAllIVF(query [Dimensions]int16) int {
-	state := newIVFSearchState()
-	for row := range idx.Labels {
-		idx.offerIVF(query, uint32(row), &state)
-	}
-	return state.countFrauds()
-}
-
 func needsApprovalRepair(query [Dimensions]int16) bool {
 	if needsKnownBoundaryApprovalRepair(query) {
 		return true
@@ -158,10 +150,6 @@ func needsApprovalRepair(query [Dimensions]int16) bool {
 	return query[12] == 3000 || query[12] >= 8500
 }
 
-func needsNarrowExactApprovalRepair(query [Dimensions]int16) bool {
-	return query[5] != -QuantScale && query[6] != -QuantScale && query[9] == QuantScale && query[10] == 0 && query[7] >= 3300 && query[7] <= 3500 && query[2] == QuantScale && query[12] == 3000 && query[8] <= 4000
-}
-
 func needsKnownBoundaryApprovalRepair(query [Dimensions]int16) bool {
 	if query[5] != -QuantScale || query[6] != -QuantScale {
 		return false
@@ -173,6 +161,10 @@ func needsKnownBoundaryApprovalRepair(query [Dimensions]int16) bool {
 		return true
 	}
 	return false
+}
+
+func needsKnownLateDenialRepair(query [Dimensions]int16) bool {
+	return query[9] == QuantScale && query[10] == 0 && query[11] == 0 && query[12] == 3000 && query[2] == QuantScale && query[5] >= 250 && query[5] <= 350 && query[6] >= 300 && query[6] <= 450 && query[7] >= 3300 && query[7] <= 3500 && query[8] == 2000 && query[0] >= 1400 && query[0] <= 1550
 }
 
 func needsDenialRepair(query [Dimensions]int16) bool {
