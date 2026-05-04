@@ -57,6 +57,7 @@ Clone the repository and fetch LFS objects:
 git clone https://github.com/whoisclebs/heindall.git
 cd heindall
 git lfs pull
+git submodule update --init --recursive
 ```
 
 Download the official challenge datasets if needed:
@@ -119,6 +120,14 @@ cd apps/api
 go test ./internal/fraud -bench=. -benchmem -run '^$'
 ```
 
+Run the official k6 smoke and load tests from the challenge specs submodule:
+
+```bash
+sh scripts/bench.sh
+```
+
+The script expects the stack to be available at `http://localhost:9999`.
+
 Validate Compose configuration:
 
 ```bash
@@ -129,6 +138,7 @@ docker compose config
 
 - `apps/api` contains the full Go application module.
 - `apps/load-balancer` contains the Rust round-robin reverse proxy.
+- `specs` is a Git submodule pointing to the official challenge repository.
 - `data/references.json.gz` is preprocessed into `data/index.heindall.bin`.
 - Runtime services are defined in `docker-compose.yml` with one load balancer and two API instances.
 
