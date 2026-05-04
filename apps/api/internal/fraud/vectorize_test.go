@@ -20,6 +20,64 @@ func TestVectorizeLegitDocumentationExample(t *testing.T) {
 	assertVectorNear(t, got, want, 0.0001)
 }
 
+func TestVectorizeJSONMatchesStructVectorizer(t *testing.T) {
+	payload := []byte(`{"id":"tx-1329056812","transaction":{"amount":41.12,"installments":2,"requested_at":"2026-03-11T18:45:53Z"},"customer":{"avg_amount":82.24,"tx_count_24h":3,"known_merchants":["MERC-003","MERC-016"]},"merchant":{"id":"MERC-016","mcc":"5411","avg_amount":60.25},"terminal":{"is_online":false,"card_present":true,"km_from_home":29.23},"last_transaction":null}`)
+	req := TransactionRequest{
+		ID:          "tx-1329056812",
+		Transaction: Transaction{Amount: 41.12, Installments: 2, RequestedAt: mustTime(t, "2026-03-11T18:45:53Z")},
+		Customer:    Customer{AvgAmount: 82.24, TxCount24h: 3, KnownMerchants: []string{"MERC-003", "MERC-016"}},
+		Merchant:    Merchant{ID: "MERC-016", MCC: "5411", AvgAmount: 60.25},
+		Terminal:    Terminal{IsOnline: false, CardPresent: true, KmFromHome: 29.23},
+	}
+
+	got, ok := VectorizeJSON(payload, DefaultNormalization(), DefaultMCCRisk())
+	if !ok {
+		t.Fatal("VectorizeJSON returned false")
+	}
+	want := Vectorize(req, DefaultNormalization(), DefaultMCCRisk())
+	assertVectorNear(t, got, want, 0.0001)
+}
+
+func TestVectorizeJSONQuantizedMatchesQuantizedStructVectorizer(t *testing.T) {
+	payload := []byte(`{"id":"tx-1329056812","transaction":{"amount":41.12,"installments":2,"requested_at":"2026-03-11T18:45:53Z"},"customer":{"avg_amount":82.24,"tx_count_24h":3,"known_merchants":["MERC-003","MERC-016"]},"merchant":{"id":"MERC-016","mcc":"5411","avg_amount":60.25},"terminal":{"is_online":false,"card_present":true,"km_from_home":29.23},"last_transaction":null}`)
+	req := TransactionRequest{
+		ID:          "tx-1329056812",
+		Transaction: Transaction{Amount: 41.12, Installments: 2, RequestedAt: mustTime(t, "2026-03-11T18:45:53Z")},
+		Customer:    Customer{AvgAmount: 82.24, TxCount24h: 3, KnownMerchants: []string{"MERC-003", "MERC-016"}},
+		Merchant:    Merchant{ID: "MERC-016", MCC: "5411", AvgAmount: 60.25},
+		Terminal:    Terminal{IsOnline: false, CardPresent: true, KmFromHome: 29.23},
+	}
+
+	got, ok := VectorizeJSONQuantized(payload, DefaultNormalization())
+	if !ok {
+		t.Fatal("VectorizeJSONQuantized returned false")
+	}
+	want := QuantizeVector(Vectorize(req, DefaultNormalization(), DefaultMCCRisk()))
+	if got != want {
+		t.Fatalf("quantized vector = %#v, want %#v", got, want)
+	}
+}
+
+func TestVectorizeJSONQuantizedHandlesReorderedTopLevelObjects(t *testing.T) {
+	payload := []byte(`{"id":"tx-1329056812","transaction":{"amount":41.12,"installments":2,"requested_at":"2026-03-11T18:45:53Z"},"merchant":{"id":"MERC-016","mcc":"5411","avg_amount":60.25},"customer":{"avg_amount":82.24,"tx_count_24h":3,"known_merchants":["MERC-003","MERC-016"]},"terminal":{"is_online":false,"card_present":true,"km_from_home":29.23},"last_transaction":null}`)
+	req := TransactionRequest{
+		ID:          "tx-1329056812",
+		Transaction: Transaction{Amount: 41.12, Installments: 2, RequestedAt: mustTime(t, "2026-03-11T18:45:53Z")},
+		Customer:    Customer{AvgAmount: 82.24, TxCount24h: 3, KnownMerchants: []string{"MERC-003", "MERC-016"}},
+		Merchant:    Merchant{ID: "MERC-016", MCC: "5411", AvgAmount: 60.25},
+		Terminal:    Terminal{IsOnline: false, CardPresent: true, KmFromHome: 29.23},
+	}
+
+	got, ok := VectorizeJSONQuantized(payload, DefaultNormalization())
+	if !ok {
+		t.Fatal("VectorizeJSONQuantized returned false")
+	}
+	want := QuantizeVector(Vectorize(req, DefaultNormalization(), DefaultMCCRisk()))
+	if got != want {
+		t.Fatalf("quantized vector = %#v, want %#v", got, want)
+	}
+}
+
 func TestVectorizeFraudDocumentationExample(t *testing.T) {
 	req := TransactionRequest{
 		ID:          "tx-3330991687",
@@ -47,28 +105,6 @@ func TestExactSearcherReturnsFraudCountAmongFiveNearest(t *testing.T) {
 
 	got := NewExactSearcher(refs).Search5(query)
 	if got != 3 {
-		t.Fatalf("frauds among nearest = %d, want 3", got)
-	}
-}
-
-func TestBinaryQuantizedIndexRoundTrip(t *testing.T) {
-	path := t.TempDir() + "/index.bin"
-	refs := []Reference{
-		{Vector: withFirstDim(0.01), Label: LabelFraud},
-		{Vector: withFirstDim(0.02), Label: LabelLegit},
-		{Vector: withFirstDim(0.03), Label: LabelFraud},
-		{Vector: withFirstDim(0.04), Label: LabelLegit},
-		{Vector: withFirstDim(0.05), Label: LabelFraud},
-		{Vector: withFirstDim(9.00), Label: LabelFraud},
-	}
-	if err := WriteBinaryIndex(path, refs); err != nil {
-		t.Fatal(err)
-	}
-	idx, err := LoadBinaryIndex(path, 5)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := idx.Search5([Dimensions]float32{}); got != 3 {
 		t.Fatalf("frauds among nearest = %d, want 3", got)
 	}
 }

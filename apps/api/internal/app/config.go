@@ -3,8 +3,11 @@ package app
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
+
+const embeddedIndexPath = "/data/index.heindall.ivf8192.bin"
 
 type Config struct {
 	Port              int
@@ -15,7 +18,9 @@ type Config struct {
 	BodyLimitBytes    int64
 	IndexPath         string
 	ReferencesPath    string
-	ANNMinCandidates  int
+	ANNNProbe         int
+	ANNAmbiguousProbe int
+	ANNRepair         bool
 }
 
 func LoadConfig() Config {
@@ -26,9 +31,11 @@ func LoadConfig() Config {
 		WriteTimeout:      2 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		BodyLimitBytes:    int64(getenvInt("BODY_LIMIT_BYTES", 16<<10)),
-		IndexPath:         os.Getenv("INDEX_PATH"),
+		IndexPath:         getenv("INDEX_PATH", embeddedIndexPath),
 		ReferencesPath:    getenv("REFERENCES_PATH", "resources/references.json.gz"),
-		ANNMinCandidates:  getenvInt("ANN_MIN_CANDIDATES", 8192),
+		ANNNProbe:         getenvInt("ANN_NPROBE", 8),
+		ANNAmbiguousProbe: getenvInt("ANN_AMBIGUOUS_NPROBE", 32),
+		ANNRepair:         getenvBool("ANN_REPAIR", true),
 	}
 }
 
@@ -49,4 +56,19 @@ func getenvInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func getenvBool(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	switch strings.ToLower(value) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		return fallback
+	}
 }

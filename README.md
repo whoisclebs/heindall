@@ -78,7 +78,7 @@ Run the Go API locally:
 
 ```bash
 cd apps/api
-INDEX_PATH=../../data/index.heindall.bin go run ./cmd/api
+INDEX_PATH=../../data/index.heindall.ivf8192.bin go run ./cmd/api
 ```
 
 Run the full challenge topology:
@@ -139,7 +139,7 @@ docker compose config
 - `apps/api` contains the full Go application module.
 - `apps/load-balancer` contains the Rust round-robin reverse proxy.
 - `specs` is a Git submodule pointing to the official challenge repository.
-- `data/references.json.gz` is preprocessed into `data/index.heindall.bin`.
+- `data/references.json.gz` is preprocessed into the IVF v2 index at `data/index.heindall.ivf8192.bin`.
 - Runtime services are defined in `docker-compose.yml` with one load balancer and two API instances.
 
 See [docs/architecture.md](docs/architecture.md) for more details.

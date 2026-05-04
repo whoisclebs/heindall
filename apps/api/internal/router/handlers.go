@@ -8,10 +8,19 @@ import (
 )
 
 type Handlers struct {
-	scoreService fraud.ScoreService
+	scoreService *fraud.Service
 }
 
-func NewHandlers(scoreService fraud.ScoreService) *Handlers {
+var scoreResponses = [...][]byte{
+	[]byte(`{"approved":true,"fraud_score":0}`),
+	[]byte(`{"approved":true,"fraud_score":0.2}`),
+	[]byte(`{"approved":true,"fraud_score":0.4}`),
+	[]byte(`{"approved":false,"fraud_score":0.6}`),
+	[]byte(`{"approved":false,"fraud_score":0.8}`),
+	[]byte(`{"approved":false,"fraud_score":1}`),
+}
+
+func NewHandlers(scoreService *fraud.Service) *Handlers {
 	return &Handlers{scoreService: scoreService}
 }
 
@@ -20,10 +29,29 @@ func (h *Handlers) Ready(_ *golpher.Request, res *golpher.Response) error {
 }
 
 func (h *Handlers) FraudScore(req *golpher.Request, res *golpher.Response) error {
-	var payload fraud.TransactionRequest
-	if err := req.Body().JSON(&payload); err != nil {
-		// HTTP errors are expensive in the scoring function, but malformed input is not expected.
-		return res.Status(http.StatusBadRequest).JSON(fraud.ScoreResponse{Approved: true, FraudScore: 0})
+	frauds, valid := h.scoreService.FraudCountJSON(req.Body().Bytes())
+	if !valid {
+		return writeScoreResponseStatus(res, http.StatusBadRequest, 0)
 	}
-	return res.Status(http.StatusOK).JSON(h.scoreService.Score(payload))
+	return writeScoreResponse(res, frauds)
+}
+
+func writeScoreResponse(res *golpher.Response, frauds int) error {
+	if frauds < 0 {
+		frauds = 0
+	} else if frauds > 5 {
+		frauds = 5
+	}
+	res.Raw().Header().Set("Content-Type", "application/json")
+	return res.Status(http.StatusOK).Send(scoreResponses[frauds])
+}
+
+func writeScoreResponseStatus(res *golpher.Response, status int, frauds int) error {
+	if frauds < 0 {
+		frauds = 0
+	} else if frauds > 5 {
+		frauds = 5
+	}
+	res.Raw().Header().Set("Content-Type", "application/json")
+	return res.Status(status).Send(scoreResponses[frauds])
 }

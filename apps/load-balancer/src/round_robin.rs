@@ -2,19 +2,26 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug)]
 pub struct RoundRobin {
-    upstreams: Vec<String>,
+    upstream_count: usize,
     next: AtomicUsize,
 }
 
 impl RoundRobin {
-    pub fn new(upstreams: Vec<String>) -> Self {
-        assert!(!upstreams.is_empty(), "at least one upstream is required");
-        Self { upstreams, next: AtomicUsize::new(0) }
+    pub fn new(upstream_count: usize) -> Self {
+        assert!(upstream_count > 0, "at least one upstream is required");
+        Self {
+            upstream_count,
+            next: AtomicUsize::new(0),
+        }
     }
 
-    pub fn next(&self) -> &str {
-        let pos = self.next.fetch_add(1, Ordering::Relaxed) % self.upstreams.len();
-        &self.upstreams[pos]
+    pub fn next(&self) -> usize {
+        let value = self.next.fetch_add(1, Ordering::Relaxed);
+        if self.upstream_count == 2 {
+            value & 1
+        } else {
+            value % self.upstream_count
+        }
     }
 }
 
@@ -23,10 +30,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rotates_upstreams() {
-        let rr = RoundRobin::new(vec!["a".to_string(), "b".to_string()]);
-        assert_eq!(rr.next(), "a");
-        assert_eq!(rr.next(), "b");
-        assert_eq!(rr.next(), "a");
+    fn rotates_two_upstreams() {
+        let rr = RoundRobin::new(2);
+        assert_eq!(rr.next(), 0);
+        assert_eq!(rr.next(), 1);
+        assert_eq!(rr.next(), 0);
     }
 }
