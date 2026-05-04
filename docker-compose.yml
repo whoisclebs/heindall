@@ -28,7 +28,6 @@ services:
       ANN_REPAIR: ${ANN_REPAIR:-true}
       GOMAXPROCS: "1"
       GOMEMLIMIT: "120MiB"
-      GOGC: "off"
     healthcheck:
       test: ["CMD", "/usr/local/bin/heindall-healthcheck"]
       interval: 10s
