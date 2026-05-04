@@ -1,6 +1,6 @@
 services:
   lb:
-    image: ghcr.io/whoisclebs/heindall-lb:470f927ab50880064bbb4d2f34c478f7c7682305
+    image: ghcr.io/whoisclebs/heindall-lb:5ba76758ee38804923f411f639ee9b1123dfcdf3
     platform: linux/amd64
     environment:
       BIND_ADDR: 0.0.0.0:9999
@@ -19,7 +19,7 @@ services:
           memory: "30MB"
 
   api1: &api
-    image: ghcr.io/whoisclebs/heindall-api:470f927ab50880064bbb4d2f34c478f7c7682305
+    image: ghcr.io/whoisclebs/heindall-api:5ba76758ee38804923f411f639ee9b1123dfcdf3
     platform: linux/amd64
     environment:
       PORT: 8080
@@ -28,7 +28,6 @@ services:
       ANN_REPAIR: ${ANN_REPAIR:-true}
       GOMAXPROCS: "1"
       GOMEMLIMIT: "120MiB"
-      GOGC: "off"
     healthcheck:
       test: ["CMD", "/usr/local/bin/heindall-healthcheck"]
       interval: 10s
