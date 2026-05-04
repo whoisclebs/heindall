@@ -41,10 +41,9 @@ func (idx *QuantizedIndex) searchIVFProbes(query [Dimensions]int16, nprobe int, 
 	probeCount := idx.topIVFCentroids(query, nprobe, &probeIDs)
 	state := newIVFSearchState()
 	for i := 0; i < probeCount; i++ {
+		state.addProbe(probeIDs[i])
 		idx.scanIVFList(query, int(probeIDs[i]), &state)
 	}
-	state.probes = probeIDs
-	state.probeCount = probeCount
 	if repair {
 		idx.repairIVF(query, &state)
 	}
@@ -59,11 +58,8 @@ func (idx *QuantizedIndex) expandIVFProbes(query [Dimensions]int16, state *ivfSe
 		if state.hasProbe(cluster) {
 			continue
 		}
+		state.addProbe(cluster)
 		idx.scanIVFList(query, int(cluster), state)
-		if state.probeCount < maxIVFProbe {
-			state.probes[state.probeCount] = cluster
-			state.probeCount++
-		}
 	}
 }
 
@@ -223,6 +219,7 @@ type ivfSearchState struct {
 	bestFraud  [5]bool
 	bestID     [5]uint32
 	probes     [maxIVFProbe]uint32
+	probeMask  [128]uint64
 	probeCount int
 }
 
@@ -244,12 +241,15 @@ func (s *ivfSearchState) countFrauds() int {
 }
 
 func (s *ivfSearchState) hasProbe(cluster uint32) bool {
-	for i := 0; i < s.probeCount; i++ {
-		if s.probes[i] == cluster {
-			return true
-		}
+	return s.probeMask[cluster>>6]&(uint64(1)<<(cluster&63)) != 0
+}
+
+func (s *ivfSearchState) addProbe(cluster uint32) {
+	s.probeMask[cluster>>6] |= uint64(1) << (cluster & 63)
+	if s.probeCount < maxIVFProbe {
+		s.probes[s.probeCount] = cluster
+		s.probeCount++
 	}
-	return false
 }
 
 func isIVFAmbiguousFraudCount(frauds int) bool {

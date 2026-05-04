@@ -12,7 +12,7 @@ use tokio::time::timeout;
 use crate::round_robin::RoundRobin;
 use crate::upstream::UpstreamPool;
 
-const BUFFER_SIZE: usize = 16 * 1024;
+const BUFFER_SIZE: usize = 4 * 1024;
 const CLIENT_READ_TIMEOUT: Duration = Duration::from_millis(2000);
 const UPSTREAM_IO_TIMEOUT: Duration = Duration::from_millis(2000);
 const BAD_GATEWAY: &[u8] =

@@ -24,6 +24,9 @@ services:
       ANN_NPROBE: ${ANN_NPROBE:-8}
       ANN_AMBIGUOUS_NPROBE: ${ANN_AMBIGUOUS_NPROBE:-32}
       ANN_REPAIR: ${ANN_REPAIR:-true}
+      GOMAXPROCS: ${GOMAXPROCS:-1}
+      GOMEMLIMIT: ${GOMEMLIMIT:-128MiB}
+      GOGC: ${GOGC:-200}
     deploy:
       resources:
         limits:
