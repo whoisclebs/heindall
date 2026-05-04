@@ -26,9 +26,9 @@ services:
       ANN_NPROBE: ${ANN_NPROBE:-8}
       ANN_AMBIGUOUS_NPROBE: ${ANN_AMBIGUOUS_NPROBE:-32}
       ANN_REPAIR: ${ANN_REPAIR:-true}
-      GOMAXPROCS: ${GOMAXPROCS:-1}
-      GOMEMLIMIT: ${GOMEMLIMIT:-128MiB}
-      GOGC: ${GOGC:-1000}
+      GOMAXPROCS: "1"
+      GOMEMLIMIT: "120MiB"
+      GOGC: "off"
     healthcheck:
       test: ["CMD", "/usr/local/bin/heindall-healthcheck"]
       interval: 10s
