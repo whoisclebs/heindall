@@ -7,6 +7,10 @@ services:
       UPSTREAMS: unix:///sockets/api1.sock,unix:///sockets/api2.sock
     volumes:
       - sockets:/sockets
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     ports:
       - "9999:9999"
     depends_on:
@@ -34,6 +38,10 @@ services:
       GOMEMLIMIT: "120MiB"
     volumes:
       - sockets:/sockets
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     healthcheck:
       test: ["CMD", "/usr/local/bin/heindall-healthcheck"]
       interval: 10s
@@ -60,6 +68,10 @@ services:
       GOMEMLIMIT: "120MiB"
     volumes:
       - sockets:/sockets
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     healthcheck:
       test: ["CMD", "/usr/local/bin/heindall-healthcheck"]
       interval: 10s
