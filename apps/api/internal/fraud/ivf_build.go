@@ -168,6 +168,21 @@ func buildIVFBlocks(vectors []int16, listOffsets, blockOffsets []uint32) []int16
 	return blocks
 }
 
+func buildCentroidBlocks(centroids []int16, clusters int) []int16 {
+	blockCount := blocksForRows(clusters)
+	blocks := make([]int16, blockCount*ivfBlockStride)
+	for c := 0; c < clusters; c++ {
+		block := c / ivfBlockSize
+		lane := c % ivfBlockSize
+		blockBase := block * ivfBlockStride
+		centroidBase := c * Dimensions
+		for d := 0; d < Dimensions; d++ {
+			blocks[blockBase+d*ivfBlockSize+lane] = centroids[centroidBase+d]
+		}
+	}
+	return blocks
+}
+
 func computeClusterStats(vectors []int16, ids []uint32, r ivfBuildRange, centroid, bboxMin, bboxMax []int16) {
 	for d := 0; d < Dimensions; d++ {
 		bboxMin[d] = 32767

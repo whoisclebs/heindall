@@ -28,6 +28,9 @@ func TestIVFQuantizedIndexRoundTrip(t *testing.T) {
 	if !idx.hasIVF() {
 		t.Fatal("loaded index is not IVF")
 	}
+	if len(idx.IVF.CentroidBlocks) != blocksForRows(idx.IVF.Clusters)*ivfBlockStride {
+		t.Fatal("loaded index did not materialize centroid blocks")
+	}
 	if got := idx.Search5([Dimensions]float32{}); got != 3 {
 		t.Fatalf("frauds among nearest = %d, want 3", got)
 	}
@@ -141,9 +144,9 @@ func TestAVX2CentroidDistancesMatchScalar(t *testing.T) {
 		t.Fatal(err)
 	}
 	query := QuantizeVector(withFirstDim(0.035))
-	centroids := unsafe.Pointer(unsafe.SliceData(idx.IVF.Centroids))
+	centroids := unsafe.Pointer(unsafe.SliceData(idx.IVF.CentroidBlocks))
 	var got [8]int64
-	quantized8DistancesRowMajorAVX2(&query[0], centroids, &got[0])
+	quantizedBlock8DistancesAVX2(&query[0], centroids, &got[0])
 	for lane := 0; lane < 8; lane++ {
 		want := quantizedDistance(query, idx.IVF.Centroids[lane*Dimensions:(lane+1)*Dimensions], maxInt64Value)
 		if got[lane] != want {
@@ -155,6 +158,65 @@ func TestAVX2CentroidDistancesMatchScalar(t *testing.T) {
 		t.Fatal("probe count mismatch")
 	}
 	for i := 0; i < 8; i++ {
+		if scalarOut[i] != avxOut[i] {
+			t.Fatalf("probe[%d] = %d, want %d", i, avxOut[i], scalarOut[i])
+		}
+	}
+}
+
+func TestCentroidBlocksAreMaterializedFromRowMajorCentroids(t *testing.T) {
+	centroids := make([]int16, 9*Dimensions)
+	for c := 0; c < 9; c++ {
+		for d := 0; d < Dimensions; d++ {
+			centroids[c*Dimensions+d] = int16(c*100 + d)
+		}
+	}
+	idx := NewIVFQuantizedIndex(nil, nil, IVFMetadata{
+		Clusters:    9,
+		Centroids:   centroids,
+		ListOffsets: make([]uint32, 10),
+	})
+	if got, want := len(idx.IVF.CentroidBlocks), blocksForRows(9)*ivfBlockStride; got != want {
+		t.Fatalf("centroid block length = %d, want %d", got, want)
+	}
+	for c := 0; c < 9; c++ {
+		block := c / ivfBlockSize
+		lane := c % ivfBlockSize
+		for d := 0; d < Dimensions; d++ {
+			got := idx.IVF.CentroidBlocks[block*ivfBlockStride+d*ivfBlockSize+lane]
+			want := centroids[c*Dimensions+d]
+			if got != want {
+				t.Fatalf("centroid block c=%d d=%d = %d, want %d", c, d, got, want)
+			}
+		}
+	}
+}
+
+func TestAVX2CentroidSelectionFallsBackWithoutCentroidBlocks(t *testing.T) {
+	if !useIVFAVX2 {
+		t.Skip("AVX2 unavailable")
+	}
+	refs := []Reference{
+		{Vector: withFirstDim(0.01), Label: LabelFraud},
+		{Vector: withFirstDim(0.02), Label: LabelLegit},
+		{Vector: withFirstDim(0.03), Label: LabelFraud},
+		{Vector: withFirstDim(0.04), Label: LabelLegit},
+		{Vector: withFirstDim(0.05), Label: LabelFraud},
+		{Vector: withFirstDim(0.06), Label: LabelLegit},
+		{Vector: withFirstDim(0.07), Label: LabelFraud},
+		{Vector: withFirstDim(0.08), Label: LabelLegit},
+	}
+	idx, err := BuildIVFIndex(refs, IVFBuildOptions{Clusters: 8, NProbe: 4, AmbiguousNProbe: 4, Repair: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx.IVF.CentroidBlocks = nil
+	query := QuantizeVector(withFirstDim(0.035))
+	var scalarOut, avxOut [maxIVFProbe]uint32
+	if idx.topIVFCentroidsScalar(query, 4, &scalarOut) != idx.topIVFCentroidsAVX2(query, 4, &avxOut) {
+		t.Fatal("probe count mismatch")
+	}
+	for i := 0; i < 4; i++ {
 		if scalarOut[i] != avxOut[i] {
 			t.Fatalf("probe[%d] = %d, want %d", i, avxOut[i], scalarOut[i])
 		}

@@ -13,6 +13,7 @@ type QuantizedIndex struct {
 type IVFMetadata struct {
 	Clusters        int
 	Centroids       []int16
+	CentroidBlocks  []int16
 	ListOffsets     []uint32
 	BlockOffsets    []uint32
 	BBoxMin         []int16
@@ -61,6 +62,9 @@ func (idx *QuantizedIndex) Search5Quantized(query [Dimensions]int16) int {
 }
 
 func NewIVFQuantizedIndex(vectors []int16, labels []uint8, ivf IVFMetadata) *QuantizedIndex {
+	if ivf.Clusters > 0 && len(ivf.Centroids) >= ivf.Clusters*Dimensions && len(ivf.CentroidBlocks) == 0 {
+		ivf.CentroidBlocks = buildCentroidBlocks(ivf.Centroids, ivf.Clusters)
+	}
 	idx := &QuantizedIndex{
 		Vectors: vectors,
 		Labels:  labels,
