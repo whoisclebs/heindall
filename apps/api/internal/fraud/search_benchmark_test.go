@@ -4,6 +4,7 @@ import "testing"
 
 var benchmarkFraudSink int
 var benchmarkProbeSink [maxIVFProbe]uint32
+var benchmarkClusterSink int
 
 func buildBenchmarkIVFIndex(b *testing.B) (*QuantizedIndex, [Dimensions]int16, [Dimensions]float32) {
 	b.Helper()
@@ -53,6 +54,53 @@ func benchmarkRepairSeedState(idx *QuantizedIndex, query [Dimensions]int16) ivfS
 		idx.scanIVFList(query, int(probeIDs[i]), &state)
 	}
 	return state
+}
+
+func repairIVFInstrumented(idx *QuantizedIndex, query [Dimensions]int16, state *ivfSearchState, scan bool) int {
+	if len(idx.IVF.BBoxMin) < idx.IVF.Clusters*Dimensions || len(idx.IVF.BBoxMax) < idx.IVF.Clusters*Dimensions {
+		return 0
+	}
+	cutoff := state.bestDist[4]
+	if cutoff == maxInt64Value {
+		return 0
+	}
+	clusters := 0
+	for c := 0; c < idx.IVF.Clusters; c++ {
+		if state.hasProbe(uint32(c)) {
+			continue
+		}
+		if idx.ivfBBoxDistance(query, c, cutoff) <= cutoff {
+			clusters++
+			if scan {
+				idx.scanIVFList(query, c, state)
+			}
+		}
+	}
+	return clusters
+}
+
+func repairStressState(idx *QuantizedIndex) ivfSearchState {
+	state := newIVFSearchState()
+	for i := 0; i < 5; i++ {
+		state.bestDist[i] = maxInt64Value / 4
+		state.bestID[i] = maxUint32Value
+	}
+	return state
+}
+
+func forcedFallbackSearch(idx *QuantizedIndex, query [Dimensions]int16, nprobe, ambiguousNProbe int, repair bool) int {
+	frauds, state := idx.searchIVFProbes(query, nprobe, false)
+	if ambiguousNProbe > nprobe {
+		idx.expandIVFProbes(query, &state, ambiguousNProbe)
+		if repair {
+			idx.repairIVF(query, &state)
+		}
+		frauds = state.countFrauds()
+	} else if repair {
+		idx.repairIVF(query, &state)
+		frauds = state.countFrauds()
+	}
+	return frauds
 }
 
 func BenchmarkQuantizedIndexSearch5(b *testing.B) {
@@ -114,6 +162,62 @@ func BenchmarkRepairIVF(b *testing.B) {
 		state := seed
 		idx.repairIVF(query, &state)
 		benchmarkFraudSink = state.countFrauds()
+	}
+}
+
+func BenchmarkRepairIVFBBoxOnly(b *testing.B) {
+	idx, query, _ := buildBenchmarkIVFIndex(b)
+	seed := benchmarkRepairSeedState(idx, query)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		state := seed
+		benchmarkClusterSink = repairIVFInstrumented(idx, query, &state, false)
+	}
+}
+
+func BenchmarkRepairIVFWithExtraScans(b *testing.B) {
+	idx, query, _ := buildBenchmarkIVFIndex(b)
+	seed := repairStressState(idx)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		state := seed
+		benchmarkClusterSink = repairIVFInstrumented(idx, query, &state, true)
+		benchmarkFraudSink = state.countFrauds()
+	}
+}
+
+func BenchmarkFallbackNProbe8Only(b *testing.B) {
+	idx, query, _ := buildBenchmarkIVFIndex(b)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		frauds, _ := idx.searchIVFProbes(query, 8, false)
+		benchmarkFraudSink = frauds
+	}
+}
+
+func BenchmarkFallbackForced8To24NoRepair(b *testing.B) {
+	idx, query, _ := buildBenchmarkIVFIndex(b)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		benchmarkFraudSink = forcedFallbackSearch(idx, query, 8, 24, false)
+	}
+}
+
+func BenchmarkFallbackForced8To24Repair(b *testing.B) {
+	idx, query, _ := buildBenchmarkIVFIndex(b)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		benchmarkFraudSink = forcedFallbackSearch(idx, query, 8, 24, true)
 	}
 }
 
