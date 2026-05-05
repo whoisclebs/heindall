@@ -4,6 +4,7 @@ const QuantScale int16 = 10000
 
 type QuantizedIndex struct {
 	Vectors []int16
+	Blocks  []int16
 	Labels  []uint8
 	IVF     IVFMetadata
 	mmap    []byte
@@ -13,6 +14,7 @@ type IVFMetadata struct {
 	Clusters        int
 	Centroids       []int16
 	ListOffsets     []uint32
+	BlockOffsets    []uint32
 	BBoxMin         []int16
 	BBoxMax         []int16
 	OrigIDs         []uint32
@@ -84,6 +86,10 @@ func (idx *QuantizedIndex) SetIVFSearch(nprobe, ambiguousNProbe int, repair bool
 
 func (idx *QuantizedIndex) hasIVF() bool {
 	return idx.IVF.Clusters > 0 && len(idx.IVF.ListOffsets) == idx.IVF.Clusters+1 && len(idx.IVF.Centroids) >= idx.IVF.Clusters*Dimensions
+}
+
+func (idx *QuantizedIndex) hasIVFBlocks() bool {
+	return idx.hasIVF() && len(idx.IVF.BlockOffsets) == idx.IVF.Clusters+1 && len(idx.Blocks) >= int(idx.IVF.BlockOffsets[idx.IVF.Clusters])*ivfBlockStride
 }
 
 func (idx *QuantizedIndex) normalizeIVFDefaults() {

@@ -36,7 +36,7 @@ func LoadConfig() Config {
 		IndexPath:         getenv("INDEX_PATH", embeddedIndexPath),
 		ReferencesPath:    getenv("REFERENCES_PATH", "resources/references.json.gz"),
 		ANNNProbe:         getenvInt("ANN_NPROBE", 8),
-		ANNAmbiguousProbe: getenvInt("ANN_AMBIGUOUS_NPROBE", 32),
+		ANNAmbiguousProbe: getenvInt("ANN_AMBIGUOUS_NPROBE", 24),
 		ANNRepair:         getenvBool("ANN_REPAIR", true),
 	}
 }

@@ -51,6 +51,36 @@ func TestIVFSearchMatchesExactWhenAllListsAreProbed(t *testing.T) {
 	}
 }
 
+func TestIVFTransposedBlockRoundTripHandlesPartialBlock(t *testing.T) {
+	path := t.TempDir() + "/index-v3-partial.ivf.bin"
+	refs := []Reference{
+		{Vector: withFirstDim(0.01), Label: LabelFraud},
+		{Vector: withFirstDim(0.02), Label: LabelLegit},
+		{Vector: withFirstDim(0.03), Label: LabelFraud},
+		{Vector: withFirstDim(0.04), Label: LabelLegit},
+		{Vector: withFirstDim(0.05), Label: LabelFraud},
+		{Vector: withFirstDim(0.06), Label: LabelLegit},
+		{Vector: withFirstDim(0.07), Label: LabelFraud},
+		{Vector: withFirstDim(0.08), Label: LabelLegit},
+		{Vector: withFirstDim(0.09), Label: LabelFraud},
+	}
+
+	if err := WriteIVFBinaryIndex(path, refs, IVFBuildOptions{Clusters: 1, NProbe: 1, AmbiguousNProbe: 1, Repair: true}); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := LoadBinaryIndex(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !idx.hasIVFBlocks() {
+		t.Fatal("loaded v3 index does not expose transposed IVF blocks")
+	}
+	want := NewExactSearcher(refs).Search5([Dimensions]float32{})
+	if got := idx.Search5([Dimensions]float32{}); got != want {
+		t.Fatalf("frauds among nearest = %d, want %d", got, want)
+	}
+}
+
 func TestHighRiskApprovalRepairRunsExactIVFSearch(t *testing.T) {
 	vectors := make([]int16, 6*Dimensions)
 	labels := []uint8{0, 0, 1, 1, 1, 0}

@@ -1,5 +1,7 @@
 package fraud
 
+import "unsafe"
+
 const (
 	maxInt64Value  = int64(^uint64(0) >> 1)
 	maxUint32Value = ^uint32(0)
@@ -7,6 +9,11 @@ const (
 
 const (
 	maxIVFProbe = 128
+)
+
+const (
+	ivfBlockSize   = 8
+	ivfBlockStride = Dimensions * ivfBlockSize
 )
 
 func (idx *QuantizedIndex) searchIVF(query [Dimensions]int16) int {
@@ -105,11 +112,124 @@ func insertCentroid(cluster int, dist int64, bestDist *[maxIVFProbe]int64, bestI
 }
 
 func (idx *QuantizedIndex) scanIVFList(query [Dimensions]int16, cluster int, state *ivfSearchState) {
+	if idx.hasIVFBlocks() {
+		idx.scanIVFBlocksUnsafe(query, cluster, state)
+		return
+	}
 	start := int(idx.IVF.ListOffsets[cluster])
 	end := int(idx.IVF.ListOffsets[cluster+1])
 	for row := start; row < end; row++ {
 		idx.offerIVF(query, uint32(row), state)
 	}
+}
+
+func (idx *QuantizedIndex) scanIVFBlocksUnsafe(query [Dimensions]int16, cluster int, state *ivfSearchState) {
+	rowStart := int(idx.IVF.ListOffsets[cluster])
+	rowEnd := int(idx.IVF.ListOffsets[cluster+1])
+	blockStart := int(idx.IVF.BlockOffsets[cluster])
+	blockEnd := int(idx.IVF.BlockOffsets[cluster+1])
+	if rowStart >= rowEnd || blockStart >= blockEnd {
+		return
+	}
+	blocks := unsafe.Pointer(unsafe.SliceData(idx.Blocks))
+	labels := unsafe.SliceData(idx.Labels)
+	var origIDs *uint32
+	if len(idx.IVF.OrigIDs) > 0 {
+		origIDs = unsafe.SliceData(idx.IVF.OrigIDs)
+	}
+	for block := blockStart; block < blockEnd; block++ {
+		blockPtr := unsafe.Add(blocks, block*ivfBlockStride*2)
+		rowBase := rowStart + (block-blockStart)*ivfBlockSize
+		lanes := ivfBlockSize
+		if remaining := rowEnd - rowBase; remaining < lanes {
+			lanes = remaining
+		}
+		for lane := 0; lane < lanes; lane++ {
+			row := rowBase + lane
+			d := quantizedBlockLaneDistanceUnsafe(query, blockPtr, lane, state.bestDist[4])
+			origID := uint32(row)
+			if origIDs != nil {
+				origID = *(*uint32)(unsafe.Add(unsafe.Pointer(origIDs), row*4))
+			}
+			if d > state.bestDist[4] || (d == state.bestDist[4] && origID >= state.bestID[4]) {
+				continue
+			}
+			fraud := *(*uint8)(unsafe.Add(unsafe.Pointer(labels), row)) == 1
+			state.insert(d, fraud, origID)
+		}
+	}
+}
+
+func quantizedBlockLaneDistanceUnsafe(query [Dimensions]int16, block unsafe.Pointer, lane int, cutoff int64) int64 {
+	var sum int64
+	d := int64(query[5]) - int64(*(*int16)(unsafe.Add(block, (5*ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[6]) - int64(*(*int16)(unsafe.Add(block, (6*ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[2]) - int64(*(*int16)(unsafe.Add(block, (2*ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[0]) - int64(*(*int16)(unsafe.Add(block, lane*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[7]) - int64(*(*int16)(unsafe.Add(block, (7*ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[8]) - int64(*(*int16)(unsafe.Add(block, (8*ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[12]) - int64(*(*int16)(unsafe.Add(block, (12*ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[1]) - int64(*(*int16)(unsafe.Add(block, (ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[3]) - int64(*(*int16)(unsafe.Add(block, (3*ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[4]) - int64(*(*int16)(unsafe.Add(block, (4*ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[9]) - int64(*(*int16)(unsafe.Add(block, (9*ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[10]) - int64(*(*int16)(unsafe.Add(block, (10*ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[11]) - int64(*(*int16)(unsafe.Add(block, (11*ivfBlockSize+lane)*2)))
+	sum += d * d
+	if sum >= cutoff {
+		return sum
+	}
+	d = int64(query[13]) - int64(*(*int16)(unsafe.Add(block, (13*ivfBlockSize+lane)*2)))
+	sum += d * d
+	return sum
 }
 
 func (idx *QuantizedIndex) repairIVF(query [Dimensions]int16, state *ivfSearchState) {
@@ -199,16 +319,20 @@ func (idx *QuantizedIndex) offerIVF(query [Dimensions]int16, row uint32, state *
 		return
 	}
 	fraud := idx.Labels[row] == 1
+	state.insert(d, fraud, origID)
+}
+
+func (s *ivfSearchState) insert(d int64, fraud bool, origID uint32) {
 	for i := 0; i < 5; i++ {
-		if d < state.bestDist[i] || (d == state.bestDist[i] && origID < state.bestID[i]) {
+		if d < s.bestDist[i] || (d == s.bestDist[i] && origID < s.bestID[i]) {
 			for j := 4; j > i; j-- {
-				state.bestDist[j] = state.bestDist[j-1]
-				state.bestFraud[j] = state.bestFraud[j-1]
-				state.bestID[j] = state.bestID[j-1]
+				s.bestDist[j] = s.bestDist[j-1]
+				s.bestFraud[j] = s.bestFraud[j-1]
+				s.bestID[j] = s.bestID[j-1]
 			}
-			state.bestDist[i] = d
-			state.bestFraud[i] = fraud
-			state.bestID[i] = origID
+			s.bestDist[i] = d
+			s.bestFraud[i] = fraud
+			s.bestID[i] = origID
 			return
 		}
 	}

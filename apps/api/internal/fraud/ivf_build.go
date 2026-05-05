@@ -39,8 +39,10 @@ func BuildIVFIndex(refs []Reference, opts IVFBuildOptions) (*QuantizedIndex, err
 
 	ranges := make([]ivfBuildRange, clusters)
 	balancedSplit(vectors, ids, ranges, 0, len(ids), 0, clusters)
-	orderedVectors, orderedLabels, ivf := materializeIVF(vectors, labels, ids, ranges, opts)
-	return NewIVFQuantizedIndex(orderedVectors, orderedLabels, ivf), nil
+	orderedVectors, orderedLabels, blocks, ivf := materializeIVF(vectors, labels, ids, ranges, opts)
+	idx := NewIVFQuantizedIndex(orderedVectors, orderedLabels, ivf)
+	idx.Blocks = blocks
+	return idx, nil
 }
 
 type ivfBuildRange struct {
@@ -96,18 +98,21 @@ func maxVarianceDimension(vectors []int16, ids []uint32, start, end int) int {
 	return bestDim
 }
 
-func materializeIVF(vectors []int16, labels []uint8, ids []uint32, ranges []ivfBuildRange, opts IVFBuildOptions) ([]int16, []uint8, IVFMetadata) {
+func materializeIVF(vectors []int16, labels []uint8, ids []uint32, ranges []ivfBuildRange, opts IVFBuildOptions) ([]int16, []uint8, []int16, IVFMetadata) {
 	clusters := len(ranges)
 	orderedVectors := make([]int16, len(vectors))
 	orderedLabels := make([]uint8, len(labels))
 	centroids := make([]int16, clusters*Dimensions)
 	listOffsets := make([]uint32, clusters+1)
+	blockOffsets := make([]uint32, clusters+1)
 	bboxMin := make([]int16, clusters*Dimensions)
 	bboxMax := make([]int16, clusters*Dimensions)
 	origIDs := make([]uint32, len(labels))
 	pos := 0
+	blockPos := 0
 	for c, r := range ranges {
 		listOffsets[c] = uint32(pos)
+		blockOffsets[c] = uint32(blockPos)
 		computeClusterStats(vectors, ids, r, centroids[c*Dimensions:(c+1)*Dimensions], bboxMin[c*Dimensions:(c+1)*Dimensions], bboxMax[c*Dimensions:(c+1)*Dimensions])
 		clusterIDs := sortClusterByCentroidDistance(vectors, ids[r.start:r.end], centroids[c*Dimensions:(c+1)*Dimensions])
 		for _, origID := range clusterIDs {
@@ -117,11 +122,15 @@ func materializeIVF(vectors []int16, labels []uint8, ids []uint32, ranges []ivfB
 			pos++
 		}
 		listOffsets[c+1] = uint32(pos)
+		blockPos += blocksForRows(len(clusterIDs))
+		blockOffsets[c+1] = uint32(blockPos)
 	}
-	return orderedVectors, orderedLabels, IVFMetadata{
+	blocks := buildIVFBlocks(orderedVectors, listOffsets, blockOffsets)
+	return orderedVectors, orderedLabels, blocks, IVFMetadata{
 		Clusters:        clusters,
 		Centroids:       centroids,
 		ListOffsets:     listOffsets,
+		BlockOffsets:    blockOffsets,
 		BBoxMin:         bboxMin,
 		BBoxMax:         bboxMax,
 		OrigIDs:         origIDs,
@@ -129,6 +138,34 @@ func materializeIVF(vectors []int16, labels []uint8, ids []uint32, ranges []ivfB
 		AmbiguousNProbe: opts.AmbiguousNProbe,
 		Repair:          opts.Repair,
 	}
+}
+
+func blocksForRows(rows int) int {
+	if rows <= 0 {
+		return 0
+	}
+	return (rows + ivfBlockSize - 1) / ivfBlockSize
+}
+
+func buildIVFBlocks(vectors []int16, listOffsets, blockOffsets []uint32) []int16 {
+	blockCount := int(blockOffsets[len(blockOffsets)-1])
+	blocks := make([]int16, blockCount*ivfBlockStride)
+	for c := 0; c+1 < len(listOffsets); c++ {
+		rowStart := int(listOffsets[c])
+		rowEnd := int(listOffsets[c+1])
+		blockStart := int(blockOffsets[c])
+		for row := rowStart; row < rowEnd; row++ {
+			rel := row - rowStart
+			block := blockStart + rel/ivfBlockSize
+			lane := rel % ivfBlockSize
+			blockBase := block * ivfBlockStride
+			vectorBase := row * Dimensions
+			for d := 0; d < Dimensions; d++ {
+				blocks[blockBase+d*ivfBlockSize+lane] = vectors[vectorBase+d]
+			}
+		}
+	}
+	return blocks
 }
 
 func computeClusterStats(vectors []int16, ids []uint32, r ivfBuildRange, centroid, bboxMin, bboxMax []int16) {

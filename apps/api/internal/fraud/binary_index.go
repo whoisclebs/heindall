@@ -39,7 +39,7 @@ func writeIVFQuantizedIndex(path string, idx *QuantizedIndex) error {
 	}
 	defer f.Close()
 
-	header := binaryHeader{Magic: binaryMagic, Version: 2, Dimensions: Dimensions, Scale: int32(QuantScale), Count: uint32(len(idx.Labels))}
+	header := binaryHeader{Magic: binaryMagic, Version: 3, Dimensions: Dimensions, Scale: int32(QuantScale), Count: uint32(len(idx.Labels))}
 	if err := binary.Write(f, binary.LittleEndian, header); err != nil {
 		return err
 	}
@@ -62,6 +62,9 @@ func writeIVFQuantizedIndex(path string, idx *QuantizedIndex) error {
 	if err := binary.Write(f, binary.LittleEndian, idx.IVF.ListOffsets); err != nil {
 		return err
 	}
+	if err := binary.Write(f, binary.LittleEndian, idx.IVF.BlockOffsets); err != nil {
+		return err
+	}
 	if err := binary.Write(f, binary.LittleEndian, idx.IVF.BBoxMin); err != nil {
 		return err
 	}
@@ -71,10 +74,15 @@ func writeIVFQuantizedIndex(path string, idx *QuantizedIndex) error {
 	if err := binary.Write(f, binary.LittleEndian, idx.IVF.OrigIDs); err != nil {
 		return err
 	}
-	if err := binary.Write(f, binary.LittleEndian, idx.Vectors); err != nil {
+	if _, err := f.Write(idx.Labels); err != nil {
 		return err
 	}
-	if _, err := f.Write(idx.Labels); err != nil {
+	if len(idx.Labels)%2 != 0 {
+		if _, err := f.Write([]byte{0}); err != nil {
+			return err
+		}
+	}
+	if err := binary.Write(f, binary.LittleEndian, idx.Blocks); err != nil {
 		return err
 	}
 	return nil
@@ -92,7 +100,7 @@ func readBinaryHeader(f *os.File) (binaryHeader, error) {
 	if header.Magic != binaryMagic || header.Dimensions != Dimensions || header.Scale != int32(QuantScale) {
 		return binaryHeader{}, fmt.Errorf("unsupported index format")
 	}
-	if header.Version != 2 {
+	if header.Version != 2 && header.Version != 3 {
 		return binaryHeader{}, fmt.Errorf("unsupported index version %d", header.Version)
 	}
 	return header, nil
@@ -138,6 +146,16 @@ func loadIVFBinaryIndexHeap(f *os.File, header binaryHeader) (*QuantizedIndex, e
 	if err := binary.Read(f, binary.LittleEndian, listOffsets); err != nil {
 		return nil, err
 	}
+	var blockOffsets []uint32
+	if header.Version >= 3 {
+		blockOffsets = make([]uint32, clusters+1)
+		if err := binary.Read(f, binary.LittleEndian, blockOffsets); err != nil {
+			return nil, err
+		}
+	}
+	if err := validateIVFOffsets(count, clusters, listOffsets, blockOffsets); err != nil {
+		return nil, err
+	}
 	bboxMin := make([]int16, clusters*Dimensions)
 	if err := binary.Read(f, binary.LittleEndian, bboxMin); err != nil {
 		return nil, err
@@ -150,18 +168,38 @@ func loadIVFBinaryIndexHeap(f *os.File, header binaryHeader) (*QuantizedIndex, e
 	if err := binary.Read(f, binary.LittleEndian, origIDs); err != nil {
 		return nil, err
 	}
-	vectors := make([]int16, count*Dimensions)
-	if err := binary.Read(f, binary.LittleEndian, vectors); err != nil {
-		return nil, err
-	}
+	var vectors []int16
 	labels := make([]uint8, count)
-	if _, err := io.ReadFull(f, labels); err != nil {
-		return nil, err
+	var blocks []int16
+	if header.Version >= 3 {
+		if _, err := io.ReadFull(f, labels); err != nil {
+			return nil, err
+		}
+		if count%2 != 0 {
+			var pad [1]byte
+			if _, err := io.ReadFull(f, pad[:]); err != nil {
+				return nil, err
+			}
+		}
+		blockCount := int(blockOffsets[len(blockOffsets)-1])
+		blocks = make([]int16, blockCount*ivfBlockStride)
+		if err := binary.Read(f, binary.LittleEndian, blocks); err != nil {
+			return nil, err
+		}
+	} else {
+		vectors = make([]int16, count*Dimensions)
+		if err := binary.Read(f, binary.LittleEndian, vectors); err != nil {
+			return nil, err
+		}
+		if _, err := io.ReadFull(f, labels); err != nil {
+			return nil, err
+		}
 	}
 	idx := NewIVFQuantizedIndex(vectors, labels, IVFMetadata{
 		Clusters:        clusters,
 		Centroids:       centroids,
 		ListOffsets:     listOffsets,
+		BlockOffsets:    blockOffsets,
 		BBoxMin:         bboxMin,
 		BBoxMax:         bboxMax,
 		OrigIDs:         origIDs,
@@ -169,5 +207,39 @@ func loadIVFBinaryIndexHeap(f *os.File, header binaryHeader) (*QuantizedIndex, e
 		AmbiguousNProbe: int(ih.AmbiguousNProbe),
 		Repair:          ih.Flags&1 == 1,
 	})
+	idx.Blocks = blocks
 	return idx, nil
+}
+
+func validateIVFOffsets(count, clusters int, listOffsets, blockOffsets []uint32) error {
+	if clusters > 128*64 {
+		return fmt.Errorf("unsupported IVF cluster count %d", clusters)
+	}
+	if len(listOffsets) != clusters+1 {
+		return fmt.Errorf("invalid IVF list offsets")
+	}
+	if listOffsets[0] != 0 || int(listOffsets[len(listOffsets)-1]) != count {
+		return fmt.Errorf("invalid IVF list bounds")
+	}
+	for i := 0; i < clusters; i++ {
+		if listOffsets[i+1] < listOffsets[i] {
+			return fmt.Errorf("non-monotonic IVF list offsets")
+		}
+	}
+	if blockOffsets == nil {
+		return nil
+	}
+	if len(blockOffsets) != clusters+1 || blockOffsets[0] != 0 {
+		return fmt.Errorf("invalid IVF block offsets")
+	}
+	for i := 0; i < clusters; i++ {
+		if blockOffsets[i+1] < blockOffsets[i] {
+			return fmt.Errorf("non-monotonic IVF block offsets")
+		}
+		rows := int(listOffsets[i+1] - listOffsets[i])
+		if int(blockOffsets[i+1]-blockOffsets[i]) != blocksForRows(rows) {
+			return fmt.Errorf("invalid IVF block span")
+		}
+	}
+	return nil
 }
