@@ -1,6 +1,9 @@
 package fraud
 
-import "testing"
+import (
+	"testing"
+	"unsafe"
+)
 
 func TestIVFQuantizedIndexRoundTrip(t *testing.T) {
 	path := t.TempDir() + "/index.ivf.bin"
@@ -78,6 +81,36 @@ func TestIVFTransposedBlockRoundTripHandlesPartialBlock(t *testing.T) {
 	want := NewExactSearcher(refs).Search5([Dimensions]float32{})
 	if got := idx.Search5([Dimensions]float32{}); got != want {
 		t.Fatalf("frauds among nearest = %d, want %d", got, want)
+	}
+}
+
+func TestAVX2BlockDistancesMatchScalar(t *testing.T) {
+	if !useIVFAVX2 {
+		t.Skip("AVX2 unavailable")
+	}
+	idx, err := BuildIVFIndex([]Reference{
+		{Vector: withFirstDim(0.01), Label: LabelFraud},
+		{Vector: withFirstDim(0.02), Label: LabelLegit},
+		{Vector: withFirstDim(0.03), Label: LabelFraud},
+		{Vector: withFirstDim(0.04), Label: LabelLegit},
+		{Vector: withFirstDim(0.05), Label: LabelFraud},
+		{Vector: withFirstDim(0.06), Label: LabelLegit},
+		{Vector: withFirstDim(0.07), Label: LabelFraud},
+		{Vector: withFirstDim(0.08), Label: LabelLegit},
+		{Vector: withFirstDim(0.09), Label: LabelFraud},
+	}, IVFBuildOptions{Clusters: 1, NProbe: 1, AmbiguousNProbe: 1, Repair: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := QuantizeVector(withFirstDim(0.035))
+	block := unsafe.Pointer(unsafe.SliceData(idx.Blocks))
+	var got [8]int64
+	quantizedBlock8DistancesAVX2(&query[0], block, &got[0])
+	for lane := 0; lane < 8; lane++ {
+		want := quantizedBlockLaneDistanceUnsafe(query, block, lane, maxInt64Value)
+		if got[lane] != want {
+			t.Fatalf("lane %d distance = %d, want %d", lane, got[lane], want)
+		}
 	}
 }
 

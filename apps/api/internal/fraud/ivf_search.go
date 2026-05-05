@@ -113,13 +113,56 @@ func insertCentroid(cluster int, dist int64, bestDist *[maxIVFProbe]int64, bestI
 
 func (idx *QuantizedIndex) scanIVFList(query [Dimensions]int16, cluster int, state *ivfSearchState) {
 	if idx.hasIVFBlocks() {
-		idx.scanIVFBlocksUnsafe(query, cluster, state)
+		if useIVFAVX2 {
+			idx.scanIVFBlocksAVX2(query, cluster, state)
+		} else {
+			idx.scanIVFBlocksUnsafe(query, cluster, state)
+		}
 		return
 	}
 	start := int(idx.IVF.ListOffsets[cluster])
 	end := int(idx.IVF.ListOffsets[cluster+1])
 	for row := start; row < end; row++ {
 		idx.offerIVF(query, uint32(row), state)
+	}
+}
+
+func (idx *QuantizedIndex) scanIVFBlocksAVX2(query [Dimensions]int16, cluster int, state *ivfSearchState) {
+	rowStart := int(idx.IVF.ListOffsets[cluster])
+	rowEnd := int(idx.IVF.ListOffsets[cluster+1])
+	blockStart := int(idx.IVF.BlockOffsets[cluster])
+	blockEnd := int(idx.IVF.BlockOffsets[cluster+1])
+	if rowStart >= rowEnd || blockStart >= blockEnd {
+		return
+	}
+	blocks := unsafe.Pointer(unsafe.SliceData(idx.Blocks))
+	labels := unsafe.SliceData(idx.Labels)
+	var origIDs *uint32
+	if len(idx.IVF.OrigIDs) >= rowEnd {
+		origIDs = unsafe.SliceData(idx.IVF.OrigIDs)
+	}
+	var dist [ivfBlockSize]int64
+	for block := blockStart; block < blockEnd; block++ {
+		blockPtr := unsafe.Add(blocks, block*ivfBlockStride*2)
+		quantizedBlock8DistancesAVX2(&query[0], blockPtr, &dist[0])
+		rowBase := rowStart + (block-blockStart)*ivfBlockSize
+		lanes := ivfBlockSize
+		if remaining := rowEnd - rowBase; remaining < lanes {
+			lanes = remaining
+		}
+		for lane := 0; lane < lanes; lane++ {
+			row := rowBase + lane
+			d := dist[lane]
+			origID := uint32(row)
+			if origIDs != nil {
+				origID = *(*uint32)(unsafe.Add(unsafe.Pointer(origIDs), row*4))
+			}
+			if d > state.bestDist[4] || (d == state.bestDist[4] && origID >= state.bestID[4]) {
+				continue
+			}
+			fraud := *(*uint8)(unsafe.Add(unsafe.Pointer(labels), row)) == 1
+			state.insert(d, fraud, origID)
+		}
 	}
 }
 
@@ -134,7 +177,7 @@ func (idx *QuantizedIndex) scanIVFBlocksUnsafe(query [Dimensions]int16, cluster 
 	blocks := unsafe.Pointer(unsafe.SliceData(idx.Blocks))
 	labels := unsafe.SliceData(idx.Labels)
 	var origIDs *uint32
-	if len(idx.IVF.OrigIDs) > 0 {
+	if len(idx.IVF.OrigIDs) >= rowEnd {
 		origIDs = unsafe.SliceData(idx.IVF.OrigIDs)
 	}
 	for block := blockStart; block < blockEnd; block++ {

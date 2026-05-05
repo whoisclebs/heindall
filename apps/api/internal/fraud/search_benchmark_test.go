@@ -1,6 +1,9 @@
 package fraud
 
-import "testing"
+import (
+	"testing"
+	"unsafe"
+)
 
 var benchmarkFraudSink int
 var benchmarkProbeSink [maxIVFProbe]uint32
@@ -150,6 +153,48 @@ func BenchmarkScanIVFListBlock8(b *testing.B) {
 		idx.scanIVFList(query, cluster, &state)
 		benchmarkFraudSink = state.countFrauds()
 	}
+}
+
+func BenchmarkScanIVFListBlock8Scalar(b *testing.B) {
+	idx, query, _ := buildBenchmarkIVFIndex(b)
+	cluster := largestIVFListCluster(idx)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		state := newIVFSearchState()
+		idx.scanIVFBlocksUnsafe(query, cluster, &state)
+		benchmarkFraudSink = state.countFrauds()
+	}
+}
+
+func BenchmarkScanIVFListBlock8AVX2(b *testing.B) {
+	idx, query, _ := buildBenchmarkIVFIndex(b)
+	cluster := largestIVFListCluster(idx)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		state := newIVFSearchState()
+		idx.scanIVFBlocksAVX2(query, cluster, &state)
+		benchmarkFraudSink = state.countFrauds()
+	}
+}
+
+func BenchmarkBlock8DistancesAVX2Prototype(b *testing.B) {
+	idx, query, _ := buildBenchmarkIVFIndex(b)
+	cluster := largestIVFListCluster(idx)
+	blockStart := int(idx.IVF.BlockOffsets[cluster])
+	block := unsafe.Pointer(unsafe.SliceData(idx.Blocks))
+	block = unsafe.Add(block, blockStart*ivfBlockStride*2)
+	var out [8]int64
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		quantizedBlock8DistancesAVX2(&query[0], block, &out[0])
+	}
+	benchmarkFraudSink = int(out[0])
 }
 
 func BenchmarkRepairIVF(b *testing.B) {
