@@ -16,6 +16,7 @@ type Config struct {
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
 	BodyLimitBytes    int64
+	SocketPath        string
 	IndexPath         string
 	ReferencesPath    string
 	ANNNProbe         int
@@ -31,6 +32,7 @@ func LoadConfig() Config {
 		WriteTimeout:      2 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		BodyLimitBytes:    int64(getenvInt("BODY_LIMIT_BYTES", 16<<10)),
+		SocketPath:        getenv("SOCKET_PATH", ""),
 		IndexPath:         getenv("INDEX_PATH", embeddedIndexPath),
 		ReferencesPath:    getenv("REFERENCES_PATH", "resources/references.json.gz"),
 		ANNNProbe:         getenvInt("ANN_NPROBE", 8),

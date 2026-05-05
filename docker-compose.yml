@@ -4,7 +4,9 @@ services:
     platform: linux/amd64
     environment:
       BIND_ADDR: 0.0.0.0:9999
-      UPSTREAMS: api1:8080,api2:8080
+      UPSTREAMS: unix:///sockets/api1.sock,unix:///sockets/api2.sock
+    volumes:
+      - sockets:/sockets
     ports:
       - "9999:9999"
     depends_on:
@@ -18,16 +20,20 @@ services:
           cpus: "0.20"
           memory: "30MB"
 
-  api1: &api
+  api1:
     image: ghcr.io/whoisclebs/heindall-api:latest
     platform: linux/amd64
+    user: "0:0"
     environment:
       PORT: 8080
+      SOCKET_PATH: /sockets/api1.sock
       ANN_NPROBE: ${ANN_NPROBE:-8}
       ANN_AMBIGUOUS_NPROBE: ${ANN_AMBIGUOUS_NPROBE:-32}
       ANN_REPAIR: ${ANN_REPAIR:-true}
       GOMAXPROCS: "1"
       GOMEMLIMIT: "120MiB"
+    volumes:
+      - sockets:/sockets
     healthcheck:
       test: ["CMD", "/usr/local/bin/heindall-healthcheck"]
       interval: 10s
@@ -41,9 +47,34 @@ services:
           memory: "160MB"
 
   api2:
-    <<: *api
-    depends_on: []
+    image: ghcr.io/whoisclebs/heindall-api:latest
+    platform: linux/amd64
+    user: "0:0"
+    environment:
+      PORT: 8080
+      SOCKET_PATH: /sockets/api2.sock
+      ANN_NPROBE: ${ANN_NPROBE:-8}
+      ANN_AMBIGUOUS_NPROBE: ${ANN_AMBIGUOUS_NPROBE:-32}
+      ANN_REPAIR: ${ANN_REPAIR:-true}
+      GOMAXPROCS: "1"
+      GOMEMLIMIT: "120MiB"
+    volumes:
+      - sockets:/sockets
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/heindall-healthcheck"]
+      interval: 10s
+      timeout: 1s
+      retries: 18
+      start_period: 1s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.40"
+          memory: "160MB"
 
 networks:
   default:
     driver: bridge
+
+volumes:
+  sockets:

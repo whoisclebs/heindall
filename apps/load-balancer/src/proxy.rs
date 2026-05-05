@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use memchr::memmem;
 use socket2::{Domain, Protocol, Socket, Type};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 
@@ -124,11 +124,14 @@ impl Proxy {
     }
 }
 
-async fn read_http_message(
-    stream: &mut TcpStream,
+async fn read_http_message<S>(
+    stream: &mut S,
     out: &mut Vec<u8>,
     read_timeout: Duration,
-) -> io::Result<bool> {
+) -> io::Result<bool>
+where
+    S: AsyncRead + Unpin,
+{
     let mut header_end = None;
     while header_end.is_none() {
         let n = read_some_timeout(stream, out, read_timeout).await?;
@@ -153,16 +156,22 @@ async fn read_http_message(
     Ok(true)
 }
 
-async fn read_some_timeout(
-    stream: &mut TcpStream,
+async fn read_some_timeout<S>(
+    stream: &mut S,
     out: &mut Vec<u8>,
     read_timeout: Duration,
-) -> io::Result<usize> {
+) -> io::Result<usize>
+where
+    S: AsyncRead + Unpin,
+{
     out.reserve(BUFFER_SIZE);
     timeout(read_timeout, stream.read_buf(out)).await?
 }
 
-async fn write_all_timeout(stream: &mut TcpStream, bytes: &[u8]) -> io::Result<()> {
+async fn write_all_timeout<S>(stream: &mut S, bytes: &[u8]) -> io::Result<()>
+where
+    S: AsyncWrite + Unpin,
+{
     timeout(UPSTREAM_IO_TIMEOUT, stream.write_all(bytes)).await??;
     Ok(())
 }
