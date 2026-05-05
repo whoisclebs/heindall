@@ -1,6 +1,6 @@
 services:
   lb:
-    image: ghcr.io/whoisclebs/heindall-lb:e655fb74c42679fae8ffb5bc884debd5f7470ce0
+    image: ghcr.io/whoisclebs/heindall-lb:0e5a1aa6cc66b43fcb65ccac2f7698c065cc994d
     platform: linux/amd64
     environment:
       BIND_ADDR: 0.0.0.0:9999
@@ -21,14 +21,14 @@ services:
           memory: "30MB"
 
   api1:
-    image: ghcr.io/whoisclebs/heindall-api:e655fb74c42679fae8ffb5bc884debd5f7470ce0
+    image: ghcr.io/whoisclebs/heindall-api:0e5a1aa6cc66b43fcb65ccac2f7698c065cc994d
     platform: linux/amd64
     user: "0:0"
     environment:
       PORT: 8080
       SOCKET_PATH: /sockets/api1.sock
       ANN_NPROBE: ${ANN_NPROBE:-8}
-      ANN_AMBIGUOUS_NPROBE: ${ANN_AMBIGUOUS_NPROBE:-32}
+      ANN_AMBIGUOUS_NPROBE: ${ANN_AMBIGUOUS_NPROBE:-24}
       ANN_REPAIR: ${ANN_REPAIR:-true}
       GOMAXPROCS: "1"
       GOMEMLIMIT: "120MiB"
@@ -47,14 +47,14 @@ services:
           memory: "160MB"
 
   api2:
-    image: ghcr.io/whoisclebs/heindall-api:e655fb74c42679fae8ffb5bc884debd5f7470ce0
+    image: ghcr.io/whoisclebs/heindall-api:0e5a1aa6cc66b43fcb65ccac2f7698c065cc994d
     platform: linux/amd64
     user: "0:0"
     environment:
       PORT: 8080
       SOCKET_PATH: /sockets/api2.sock
       ANN_NPROBE: ${ANN_NPROBE:-8}
-      ANN_AMBIGUOUS_NPROBE: ${ANN_AMBIGUOUS_NPROBE:-32}
+      ANN_AMBIGUOUS_NPROBE: ${ANN_AMBIGUOUS_NPROBE:-24}
       ANN_REPAIR: ${ANN_REPAIR:-true}
       GOMAXPROCS: "1"
       GOMEMLIMIT: "120MiB"
