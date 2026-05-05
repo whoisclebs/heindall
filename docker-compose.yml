@@ -1,6 +1,6 @@
 services:
   lb:
-    image: ghcr.io/whoisclebs/heindall-lb:0e5a1aad285a932706cf84e77de7cea7cc3c0d2a
+    image: ghcr.io/whoisclebs/heindall-lb:f8113b67d92b3c4f83c9542a4e9dbe1826f97fe3
     platform: linux/amd64
     environment:
       BIND_ADDR: 0.0.0.0:9999
@@ -21,7 +21,7 @@ services:
           memory: "30MB"
 
   api1:
-    image: ghcr.io/whoisclebs/heindall-api:0e5a1aad285a932706cf84e77de7cea7cc3c0d2a
+    image: ghcr.io/whoisclebs/heindall-api:f8113b67d92b3c4f83c9542a4e9dbe1826f97fe3
     platform: linux/amd64
     user: "0:0"
     environment:
@@ -47,7 +47,7 @@ services:
           memory: "160MB"
 
   api2:
-    image: ghcr.io/whoisclebs/heindall-api:0e5a1aad285a932706cf84e77de7cea7cc3c0d2a
+    image: ghcr.io/whoisclebs/heindall-api:f8113b67d92b3c4f83c9542a4e9dbe1826f97fe3
     platform: linux/amd64
     user: "0:0"
     environment:
