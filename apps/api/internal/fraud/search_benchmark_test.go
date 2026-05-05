@@ -128,6 +128,33 @@ func BenchmarkTopIVFCentroids(b *testing.B) {
 	benchmarkProbeSink = out
 }
 
+func BenchmarkTopIVFCentroidsScalar(b *testing.B) {
+	idx, query, _ := buildBenchmarkIVFIndex(b)
+	var out [maxIVFProbe]uint32
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = idx.topIVFCentroidsScalar(query, idx.IVF.NProbe, &out)
+	}
+	benchmarkProbeSink = out
+}
+
+func BenchmarkTopIVFCentroidsAVX2(b *testing.B) {
+	if !useIVFAVX2 {
+		b.Skip("AVX2 unavailable")
+	}
+	idx, query, _ := buildBenchmarkIVFIndex(b)
+	var out [maxIVFProbe]uint32
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = idx.topIVFCentroidsAVX2(query, idx.IVF.NProbe, &out)
+	}
+	benchmarkProbeSink = out
+}
+
 func BenchmarkScanIVFListRowMajor(b *testing.B) {
 	idx, query, _ := buildBenchmarkIVFIndex(b)
 	idx = rowMajorBenchmarkIndex(idx)

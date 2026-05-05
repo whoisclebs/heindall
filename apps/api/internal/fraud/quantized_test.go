@@ -114,6 +114,53 @@ func TestAVX2BlockDistancesMatchScalar(t *testing.T) {
 	}
 }
 
+func TestAVX2CentroidDistancesMatchScalar(t *testing.T) {
+	if !useIVFAVX2 {
+		t.Skip("AVX2 unavailable")
+	}
+	refs := []Reference{
+		{Vector: withFirstDim(0.01), Label: LabelFraud},
+		{Vector: withFirstDim(0.02), Label: LabelLegit},
+		{Vector: withFirstDim(0.03), Label: LabelFraud},
+		{Vector: withFirstDim(0.04), Label: LabelLegit},
+		{Vector: withFirstDim(0.05), Label: LabelFraud},
+		{Vector: withFirstDim(0.06), Label: LabelLegit},
+		{Vector: withFirstDim(0.07), Label: LabelFraud},
+		{Vector: withFirstDim(0.08), Label: LabelLegit},
+		{Vector: withFirstDim(0.09), Label: LabelFraud},
+		{Vector: withFirstDim(0.10), Label: LabelLegit},
+		{Vector: withFirstDim(0.11), Label: LabelFraud},
+		{Vector: withFirstDim(0.12), Label: LabelLegit},
+		{Vector: withFirstDim(0.13), Label: LabelFraud},
+		{Vector: withFirstDim(0.14), Label: LabelLegit},
+		{Vector: withFirstDim(0.15), Label: LabelFraud},
+		{Vector: withFirstDim(0.16), Label: LabelLegit},
+	}
+	idx, err := BuildIVFIndex(refs, IVFBuildOptions{Clusters: 16, NProbe: 8, AmbiguousNProbe: 8, Repair: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := QuantizeVector(withFirstDim(0.035))
+	centroids := unsafe.Pointer(unsafe.SliceData(idx.IVF.Centroids))
+	var got [8]int64
+	quantized8DistancesRowMajorAVX2(&query[0], centroids, &got[0])
+	for lane := 0; lane < 8; lane++ {
+		want := quantizedDistance(query, idx.IVF.Centroids[lane*Dimensions:(lane+1)*Dimensions], maxInt64Value)
+		if got[lane] != want {
+			t.Fatalf("lane %d distance = %d, want %d", lane, got[lane], want)
+		}
+	}
+	var scalarOut, avxOut [maxIVFProbe]uint32
+	if idx.topIVFCentroidsScalar(query, 8, &scalarOut) != idx.topIVFCentroidsAVX2(query, 8, &avxOut) {
+		t.Fatal("probe count mismatch")
+	}
+	for i := 0; i < 8; i++ {
+		if scalarOut[i] != avxOut[i] {
+			t.Fatalf("probe[%d] = %d, want %d", i, avxOut[i], scalarOut[i])
+		}
+	}
+}
+
 func TestHighRiskApprovalRepairRunsExactIVFSearch(t *testing.T) {
 	vectors := make([]int16, 6*Dimensions)
 	labels := []uint8{0, 0, 1, 1, 1, 0}

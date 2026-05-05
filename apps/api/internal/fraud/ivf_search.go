@@ -71,6 +71,13 @@ func (idx *QuantizedIndex) expandIVFProbes(query [Dimensions]int16, state *ivfSe
 }
 
 func (idx *QuantizedIndex) topIVFCentroids(query [Dimensions]int16, nprobe int, out *[maxIVFProbe]uint32) int {
+	if useIVFAVX2 {
+		return idx.topIVFCentroidsAVX2(query, nprobe, out)
+	}
+	return idx.topIVFCentroidsScalar(query, nprobe, out)
+}
+
+func (idx *QuantizedIndex) topIVFCentroidsScalar(query [Dimensions]int16, nprobe int, out *[maxIVFProbe]uint32) int {
 	if nprobe <= 0 {
 		return 0
 	}
@@ -86,6 +93,54 @@ func (idx *QuantizedIndex) topIVFCentroids(query [Dimensions]int16, nprobe int, 
 	}
 	count := 0
 	for c := 0; c < idx.IVF.Clusters; c++ {
+		start := c * Dimensions
+		d := quantizedDistance(query, idx.IVF.Centroids[start:start+Dimensions], bestDist[nprobe-1])
+		if count < nprobe {
+			insertCentroid(c, d, &bestDist, out, count)
+			count++
+			continue
+		}
+		if d < bestDist[nprobe-1] {
+			insertCentroid(c, d, &bestDist, out, nprobe-1)
+		}
+	}
+	return count
+}
+
+func (idx *QuantizedIndex) topIVFCentroidsAVX2(query [Dimensions]int16, nprobe int, out *[maxIVFProbe]uint32) int {
+	if nprobe <= 0 {
+		return 0
+	}
+	if nprobe > idx.IVF.Clusters {
+		nprobe = idx.IVF.Clusters
+	}
+	if nprobe > maxIVFProbe {
+		nprobe = maxIVFProbe
+	}
+	var bestDist [maxIVFProbe]int64
+	for i := 0; i < nprobe; i++ {
+		bestDist[i] = maxInt64Value
+	}
+	centroids := unsafe.Pointer(unsafe.SliceData(idx.IVF.Centroids))
+	var dist [ivfBlockSize]int64
+	count := 0
+	c := 0
+	for ; c+ivfBlockSize <= idx.IVF.Clusters; c += ivfBlockSize {
+		quantized8DistancesRowMajorAVX2(&query[0], unsafe.Add(centroids, c*Dimensions*2), &dist[0])
+		for lane := 0; lane < ivfBlockSize; lane++ {
+			d := dist[lane]
+			cluster := c + lane
+			if count < nprobe {
+				insertCentroid(cluster, d, &bestDist, out, count)
+				count++
+				continue
+			}
+			if d < bestDist[nprobe-1] {
+				insertCentroid(cluster, d, &bestDist, out, nprobe-1)
+			}
+		}
+	}
+	for ; c < idx.IVF.Clusters; c++ {
 		start := c * Dimensions
 		d := quantizedDistance(query, idx.IVF.Centroids[start:start+Dimensions], bestDist[nprobe-1])
 		if count < nprobe {

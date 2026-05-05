@@ -7,3 +7,5 @@ import "unsafe"
 var useIVFAVX2 = false
 
 func quantizedBlock8DistancesAVX2(_ *int16, _ unsafe.Pointer, _ *int64) {}
+
+func quantized8DistancesRowMajorAVX2(_ *int16, _ unsafe.Pointer, _ *int64) {}
