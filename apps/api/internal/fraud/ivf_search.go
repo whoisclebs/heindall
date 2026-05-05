@@ -18,13 +18,13 @@ const (
 
 func (idx *QuantizedIndex) searchIVF(query [Dimensions]int16) int {
 	frauds, state := idx.searchIVFProbes(query, idx.IVF.NProbe, false)
-	if isIVFAmbiguousFraudCount(frauds) && idx.IVF.AmbiguousNProbe > idx.IVF.NProbe {
+	if isIVFAmbiguousFraudCount(query, frauds) && idx.IVF.AmbiguousNProbe > idx.IVF.NProbe {
 		idx.expandIVFProbes(query, &state, idx.IVF.AmbiguousNProbe)
 		if idx.IVF.Repair {
 			idx.repairIVF(query, &state)
 		}
 		frauds = state.countFrauds()
-	} else if idx.IVF.Repair && isIVFAmbiguousFraudCount(frauds) {
+	} else if idx.IVF.Repair && isIVFAmbiguousFraudCount(query, frauds) {
 		idx.repairIVF(query, &state)
 		frauds = state.countFrauds()
 	}
@@ -376,6 +376,9 @@ func (s *ivfSearchState) addProbe(cluster uint32) {
 	}
 }
 
-func isIVFAmbiguousFraudCount(frauds int) bool {
-	return frauds > 0 && frauds < 5
+func isIVFAmbiguousFraudCount(query [Dimensions]int16, frauds int) bool {
+	if frauds > 1 && frauds < 5 {
+		return true
+	}
+	return frauds == 1 && query[9] == 0
 }
