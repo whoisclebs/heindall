@@ -23,16 +23,16 @@ func NewServer(cfg Config) (*Server, error) {
 	)
 
 	g := golpher.New(golpher.AppConfig{
-		Port:              cfg.Port,
-		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
-		ReadTimeout:       cfg.ReadTimeout,
-		WriteTimeout:      cfg.WriteTimeout,
-		IdleTimeout:       cfg.IdleTimeout,
+		Port:                       cfg.Port,
+		ReadHeaderTimeout:          cfg.ReadHeaderTimeout,
+		ReadTimeout:                cfg.ReadTimeout,
+		WriteTimeout:               cfg.WriteTimeout,
+		IdleTimeout:                cfg.IdleTimeout,
+		DisableResponseBodyCapture: true,
+		DisableBanner:              true,
 	})
-	g.Use(golpher.Recover())
-	g.Use(golpher.BodyLimit(cfg.BodyLimitBytes))
 
-	router.RegisterRoutes(g, router.NewHandlers(fraudService))
+	router.RegisterRoutes(g, router.NewHandlers(fraudService, cfg.BodyLimitBytes))
 
 	return &Server{app: g}, nil
 }
