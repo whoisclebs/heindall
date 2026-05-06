@@ -238,8 +238,33 @@ func (idx *QuantizedIndex) scanIVFBlocksAVX2(query [Dimensions]int16, cluster in
 	if len(idx.IVF.OrigIDs) >= rowEnd {
 		origIDs = unsafe.SliceData(idx.IVF.OrigIDs)
 	}
+	var dist32 [ivfBlockSize * 4]int64
+	block := blockStart
+	for ; block+4 <= blockEnd; block += 4 {
+		blockPtr := unsafe.Add(blocks, block*ivfBlockStride*2)
+		quantizedBlock32DistancesAVX2(&query[0], blockPtr, &dist32[0])
+		rowBase := rowStart + (block-blockStart)*ivfBlockSize
+		lanes := ivfBlockSize * 4
+		if remaining := rowEnd - rowBase; remaining < lanes {
+			lanes = remaining
+		}
+		for lane := 0; lane < lanes; lane++ {
+			row := rowBase + lane
+			d := dist32[lane]
+			origID := uint32(row)
+			if origIDs != nil {
+				origID = *(*uint32)(unsafe.Add(unsafe.Pointer(origIDs), row*4))
+			}
+			if d > state.bestDist[4] || (d == state.bestDist[4] && origID >= state.bestID[4]) {
+				continue
+			}
+			fraud := *(*uint8)(unsafe.Add(unsafe.Pointer(labels), row)) == 1
+			state.insert(d, fraud, origID)
+		}
+	}
+
 	var dist [ivfBlockSize]int64
-	for block := blockStart; block < blockEnd; block++ {
+	for ; block < blockEnd; block++ {
 		blockPtr := unsafe.Add(blocks, block*ivfBlockStride*2)
 		quantizedBlock8DistancesAVX2(&query[0], blockPtr, &dist[0])
 		rowBase := rowStart + (block-blockStart)*ivfBlockSize

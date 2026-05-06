@@ -117,6 +117,64 @@ func TestAVX2BlockDistancesMatchScalar(t *testing.T) {
 	}
 }
 
+func TestAVX2Block32DistancesMatchScalar(t *testing.T) {
+	if !useIVFAVX2 {
+		t.Skip("AVX2 unavailable")
+	}
+	refs := make([]Reference, 32)
+	for i := range refs {
+		refs[i] = Reference{Vector: withFirstDim(float32(i+1) / 100), Label: LabelLegit}
+		if i%3 == 0 {
+			refs[i].Label = LabelFraud
+		}
+	}
+	idx, err := BuildIVFIndex(refs, IVFBuildOptions{Clusters: 1, NProbe: 1, AmbiguousNProbe: 1, Repair: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := QuantizeVector(withFirstDim(0.175))
+	block := unsafe.Pointer(unsafe.SliceData(idx.Blocks))
+	var got [32]int64
+	quantizedBlock32DistancesAVX2(&query[0], block, &got[0])
+	for blockIndex := 0; blockIndex < 4; blockIndex++ {
+		blockPtr := unsafe.Add(block, blockIndex*ivfBlockStride*2)
+		for lane := 0; lane < ivfBlockSize; lane++ {
+			outLane := blockIndex*ivfBlockSize + lane
+			want := quantizedBlockLaneDistanceUnsafe(query, blockPtr, lane, maxInt64Value)
+			if got[outLane] != want {
+				t.Fatalf("block %d lane %d distance = %d, want %d", blockIndex, lane, got[outLane], want)
+			}
+		}
+	}
+}
+
+func TestAVX2Block32ScanMatchesScalarWithPartialBlock(t *testing.T) {
+	if !useIVFAVX2 {
+		t.Skip("AVX2 unavailable")
+	}
+	refs := make([]Reference, 29)
+	for i := range refs {
+		refs[i] = Reference{Vector: withFirstDim(float32((i*7)%29) / 29), Label: LabelLegit}
+		if i%4 == 0 || i%9 == 0 {
+			refs[i].Label = LabelFraud
+		}
+	}
+	idx, err := BuildIVFIndex(refs, IVFBuildOptions{Clusters: 1, NProbe: 1, AmbiguousNProbe: 1, Repair: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := QuantizeVector(withFirstDim(0.37))
+
+	avxState := newIVFSearchState()
+	idx.scanIVFBlocksAVX2(query, 0, &avxState)
+	scalarState := newIVFSearchState()
+	idx.scanIVFBlocksUnsafe(query, 0, &scalarState)
+
+	if avxState.bestDist != scalarState.bestDist || avxState.bestFraud != scalarState.bestFraud || avxState.bestID != scalarState.bestID {
+		t.Fatalf("block32 scan state mismatch\navx:    dist=%v fraud=%v id=%v\nscalar: dist=%v fraud=%v id=%v", avxState.bestDist, avxState.bestFraud, avxState.bestID, scalarState.bestDist, scalarState.bestFraud, scalarState.bestID)
+	}
+}
+
 func TestAVX2CentroidDistancesMatchScalar(t *testing.T) {
 	if !useIVFAVX2 {
 		t.Skip("AVX2 unavailable")

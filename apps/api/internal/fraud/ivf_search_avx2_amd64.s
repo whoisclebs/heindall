@@ -43,6 +43,41 @@ TEXT ·quantizedBlock8DistancesAVX2(SB), NOSPLIT, $0-24
 	VZEROUPPER
 	RET
 
+#define BLOCK8(blockoff, outoff) \
+	VPXOR Y0, Y0, Y0; \
+	VPXOR Y1, Y1, Y1; \
+	STEP(10, blockoff+80); \
+	STEP(12, blockoff+96); \
+	STEP(4, blockoff+32); \
+	STEP(0, blockoff+0); \
+	STEP(14, blockoff+112); \
+	STEP(16, blockoff+128); \
+	STEP(24, blockoff+192); \
+	STEP(2, blockoff+16); \
+	STEP(6, blockoff+48); \
+	STEP(8, blockoff+64); \
+	STEP(18, blockoff+144); \
+	STEP(20, blockoff+160); \
+	STEP(22, blockoff+176); \
+	STEP(26, blockoff+208); \
+	VMOVDQU Y0, outoff(CX); \
+	VMOVDQU Y1, outoff+32(CX)
+
+// func quantizedBlock32DistancesAVX2(query *int16, block unsafe.Pointer, out *int64)
+TEXT ·quantizedBlock32DistancesAVX2(SB), NOSPLIT, $0-24
+	MOVQ query+0(FP), AX
+	MOVQ block+8(FP), BX
+	MOVQ out+16(FP), CX
+
+	BLOCK8(0, 0)
+	BLOCK8(224, 64)
+	BLOCK8(448, 128)
+	BLOCK8(672, 192)
+
+	VZEROUPPER
+	RET
+
+#undef BLOCK8
 #undef STEP
 
 #define ROWSTEP(qoff, boff) \

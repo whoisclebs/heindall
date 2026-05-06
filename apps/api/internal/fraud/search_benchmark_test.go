@@ -224,6 +224,25 @@ func BenchmarkBlock8DistancesAVX2Prototype(b *testing.B) {
 	benchmarkFraudSink = int(out[0])
 }
 
+func BenchmarkBlock32DistancesAVX2Prototype(b *testing.B) {
+	if !useIVFAVX2 {
+		b.Skip("AVX2 unavailable")
+	}
+	idx, query, _ := buildBenchmarkIVFIndex(b)
+	cluster := largestIVFListCluster(idx)
+	blockStart := int(idx.IVF.BlockOffsets[cluster])
+	block := unsafe.Pointer(unsafe.SliceData(idx.Blocks))
+	block = unsafe.Add(block, blockStart*ivfBlockStride*2)
+	var out [32]int64
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		quantizedBlock32DistancesAVX2(&query[0], block, &out[0])
+	}
+	benchmarkFraudSink = int(out[0])
+}
+
 func BenchmarkRepairIVF(b *testing.B) {
 	idx, query, _ := buildBenchmarkIVFIndex(b)
 	seed := benchmarkRepairSeedState(idx, query)
