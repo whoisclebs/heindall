@@ -66,6 +66,10 @@ func loadIVFBinaryIndexMmap(data []byte, header binaryHeader) (*QuantizedIndex, 
 
 	centroidsCount := clusters * Dimensions
 	centroidsBytes := centroidsCount * 2
+	centroidBlockBytes := 0
+	if header.Version >= 4 {
+		centroidBlockBytes = blocksForRows(clusters) * ivfBlockStride * 2
+	}
 	listOffsetsCount := clusters + 1
 	listOffsetsBytes := listOffsetsCount * 4
 	blockOffsetsBytes := 0
@@ -83,7 +87,7 @@ func loadIVFBinaryIndexMmap(data []byte, header binaryHeader) (*QuantizedIndex, 
 	if header.Version == 2 {
 		vectorBytes = count * Dimensions * 2
 	}
-	need := pos + centroidsBytes + listOffsetsBytes + blockOffsetsBytes + bboxBytes + bboxBytes + origIDsBytes + vectorBytes + count + labelPadding
+	need := pos + centroidsBytes + centroidBlockBytes + listOffsetsBytes + blockOffsetsBytes + bboxBytes + bboxBytes + origIDsBytes + vectorBytes + count + labelPadding
 	if len(data) < need {
 		syscall.Munmap(data)
 		return nil, fmt.Errorf("truncated IVF binary index")
@@ -91,6 +95,11 @@ func loadIVFBinaryIndexMmap(data []byte, header binaryHeader) (*QuantizedIndex, 
 
 	centroids := unsafe.Slice((*int16)(unsafe.Pointer(&data[pos])), centroidsCount)
 	pos += centroidsBytes
+	var centroidBlocks []int16
+	if header.Version >= 4 {
+		centroidBlocks = unsafe.Slice((*int16)(unsafe.Pointer(&data[pos])), centroidBlockBytes/2)
+		pos += centroidBlockBytes
+	}
 	listOffsets := unsafe.Slice((*uint32)(unsafe.Pointer(&data[pos])), listOffsetsCount)
 	pos += listOffsetsBytes
 	var blockOffsets []uint32
@@ -129,6 +138,7 @@ func loadIVFBinaryIndexMmap(data []byte, header binaryHeader) (*QuantizedIndex, 
 	idx := NewIVFQuantizedIndex(vectors, labels, IVFMetadata{
 		Clusters:        clusters,
 		Centroids:       centroids,
+		CentroidBlocks:  centroidBlocks,
 		ListOffsets:     listOffsets,
 		BlockOffsets:    blockOffsets,
 		BBoxMin:         bboxMin,

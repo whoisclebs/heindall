@@ -9,6 +9,8 @@ import (
 
 var binaryMagic = [8]byte{'H', 'N', 'D', 'X', '2', '0', '2', '6'}
 
+const currentBinaryIndexVersion uint32 = 4
+
 type binaryHeader struct {
 	Magic      [8]byte
 	Version    uint32
@@ -39,7 +41,19 @@ func writeIVFQuantizedIndex(path string, idx *QuantizedIndex) error {
 	}
 	defer f.Close()
 
-	header := binaryHeader{Magic: binaryMagic, Version: 3, Dimensions: Dimensions, Scale: int32(QuantScale), Count: uint32(len(idx.Labels))}
+	centroidBlockLen := 0
+	if idx.IVF.Clusters > 0 {
+		centroidBlockLen = blocksForRows(idx.IVF.Clusters) * ivfBlockStride
+	}
+	if idx.IVF.Clusters > 0 && len(idx.IVF.Centroids) >= idx.IVF.Clusters*Dimensions && len(idx.IVF.CentroidBlocks) < centroidBlockLen {
+		idx.IVF.CentroidBlocks = buildCentroidBlocks(idx.IVF.Centroids, idx.IVF.Clusters)
+	}
+	centroidBlocks := idx.IVF.CentroidBlocks
+	if len(centroidBlocks) > centroidBlockLen {
+		centroidBlocks = centroidBlocks[:centroidBlockLen]
+	}
+
+	header := binaryHeader{Magic: binaryMagic, Version: currentBinaryIndexVersion, Dimensions: Dimensions, Scale: int32(QuantScale), Count: uint32(len(idx.Labels))}
 	if err := binary.Write(f, binary.LittleEndian, header); err != nil {
 		return err
 	}
@@ -57,6 +71,9 @@ func writeIVFQuantizedIndex(path string, idx *QuantizedIndex) error {
 		return err
 	}
 	if err := binary.Write(f, binary.LittleEndian, idx.IVF.Centroids); err != nil {
+		return err
+	}
+	if err := binary.Write(f, binary.LittleEndian, centroidBlocks); err != nil {
 		return err
 	}
 	if err := binary.Write(f, binary.LittleEndian, idx.IVF.ListOffsets); err != nil {
@@ -100,7 +117,7 @@ func readBinaryHeader(f *os.File) (binaryHeader, error) {
 	if header.Magic != binaryMagic || header.Dimensions != Dimensions || header.Scale != int32(QuantScale) {
 		return binaryHeader{}, fmt.Errorf("unsupported index format")
 	}
-	if header.Version != 2 && header.Version != 3 {
+	if header.Version != 2 && header.Version != 3 && header.Version != 4 {
 		return binaryHeader{}, fmt.Errorf("unsupported index version %d", header.Version)
 	}
 	return header, nil
@@ -141,6 +158,13 @@ func loadIVFBinaryIndexHeap(f *os.File, header binaryHeader) (*QuantizedIndex, e
 	centroids := make([]int16, clusters*Dimensions)
 	if err := binary.Read(f, binary.LittleEndian, centroids); err != nil {
 		return nil, err
+	}
+	var centroidBlocks []int16
+	if header.Version >= 4 {
+		centroidBlocks = make([]int16, blocksForRows(clusters)*ivfBlockStride)
+		if err := binary.Read(f, binary.LittleEndian, centroidBlocks); err != nil {
+			return nil, err
+		}
 	}
 	listOffsets := make([]uint32, clusters+1)
 	if err := binary.Read(f, binary.LittleEndian, listOffsets); err != nil {
@@ -198,6 +222,7 @@ func loadIVFBinaryIndexHeap(f *os.File, header binaryHeader) (*QuantizedIndex, e
 	idx := NewIVFQuantizedIndex(vectors, labels, IVFMetadata{
 		Clusters:        clusters,
 		Centroids:       centroids,
+		CentroidBlocks:  centroidBlocks,
 		ListOffsets:     listOffsets,
 		BlockOffsets:    blockOffsets,
 		BBoxMin:         bboxMin,
