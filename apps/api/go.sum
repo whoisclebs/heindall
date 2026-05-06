@@ -1,4 +1,4 @@
-github.com/go-golpher/golpher v0.0.0-20260505002625-9e51d9d1b80b h1:oKf3mtSE5k5EP9AK+urqX0/gKgav1VxJZq0IHn9Pg9Q=
-github.com/go-golpher/golpher v0.0.0-20260505002625-9e51d9d1b80b/go.mod h1:MiItFnflw4afaHkETWRPKABJQ2GWkHLTBDjx7VuDOZQ=
+github.com/go-golpher/golpher v0.0.0-20260506021017-212534a5c098 h1:lzD5HG3i42dy4tMyCNpYpuf0XfkymtKyFZ/zTxQf7Co=
+github.com/go-golpher/golpher v0.0.0-20260506021017-212534a5c098/go.mod h1:MiItFnflw4afaHkETWRPKABJQ2GWkHLTBDjx7VuDOZQ=
 golang.org/x/sys v0.43.0 h1:Rlag2XtaFTxp19wS8MXlJwTvoh8ArU6ezoyFsMyCTNI=
 golang.org/x/sys v0.43.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
