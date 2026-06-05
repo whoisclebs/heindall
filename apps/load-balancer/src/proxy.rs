@@ -73,18 +73,17 @@ impl Proxy {
         let first = self.balancer.next();
         let mut last_err = None;
 
-        // Retry stale pooled sockets before surfacing a 502. The challenge
-        // endpoints are read-only/idempotent, so retrying a request is safe here.
+        // Try each upstream once. Stale pooled sockets are evicted on error
+        // via clear_idle(), so a single attempt per upstream is sufficient for
+        // read-only / idempotent challenge endpoints.
         for offset in 0..self.upstreams.len() {
             let upstream_idx = (first + offset) % self.upstreams.len();
-            for _ in 0..2 {
-                response.clear();
-                match self.forward_once(upstream_idx, request, response).await {
-                    Ok(()) => return Ok(()),
-                    Err(err) => {
-                        self.upstreams[upstream_idx].clear_idle();
-                        last_err = Some(err);
-                    }
+            response.clear();
+            match self.forward_once(upstream_idx, request, response).await {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    self.upstreams[upstream_idx].clear_idle().await;
+                    last_err = Some(err);
                 }
             }
         }
@@ -112,7 +111,7 @@ impl Proxy {
 
         match read_http_message(&mut upstream, response, UPSTREAM_IO_TIMEOUT).await {
             Ok(true) => {
-                pool.release(upstream);
+                pool.release(upstream).await;
                 Ok(())
             }
             Ok(false) => Err(io::Error::new(

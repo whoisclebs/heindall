@@ -1,12 +1,12 @@
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::Mutex;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 use tokio::time::timeout;
@@ -51,7 +51,7 @@ impl UpstreamPool {
     }
 
     pub async fn acquire(&self) -> std::io::Result<UpstreamStream> {
-        if let Some(stream) = self.idle.lock().expect("pool mutex").pop() {
+        if let Some(stream) = self.idle.lock().await.pop() {
             return Ok(stream);
         }
 
@@ -79,15 +79,15 @@ impl UpstreamPool {
         }
     }
 
-    pub fn release(&self, stream: UpstreamStream) {
-        let mut idle = self.idle.lock().expect("pool mutex");
+    pub async fn release(&self, stream: UpstreamStream) {
+        let mut idle = self.idle.lock().await;
         if idle.len() < self.max_idle {
             idle.push(stream);
         }
     }
 
-    pub fn clear_idle(&self) {
-        self.idle.lock().expect("pool mutex").clear();
+    pub async fn clear_idle(&self) {
+        self.idle.lock().await.clear();
     }
 }
 

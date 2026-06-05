@@ -10,9 +10,8 @@ use proxy::Proxy;
 use upstream::UpstreamPool;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_io()
-        .enable_time()
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
         .build()?
         .block_on(async_main())
 }
