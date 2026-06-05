@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 
 	"github.com/go-golpher/golpher"
@@ -41,7 +42,29 @@ func NewServer(cfg Config) (*Server, error) {
 
 	router.RegisterRoutes(g, router.NewHandlers(fraudService, cfg.BodyLimitBytes))
 
+	if cfg.PprofEnabled {
+		registerPprof(g)
+	}
+
 	return &Server{app: g, socketPath: cfg.SocketPath}, nil
+}
+
+func registerPprof(app *golpher.App) {
+	// These routes are only mounted when PPROF_ENABLED=true, for local
+	// investigation. Use a standard ServeMux so the full pprof surface remains
+	// available under Golpher's exact/dynamic routing.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	handler := golpher.FromHTTPHandler(mux)
+	app.Handle(http.MethodGet, "/debug/pprof", handler)
+	app.Handle(http.MethodGet, "/debug/pprof/", handler)
+	app.Handle(http.MethodGet, "/debug/pprof/*path", handler)
+	app.Handle(http.MethodPost, "/debug/pprof/symbol", handler)
 }
 
 func (s *Server) Listen() {

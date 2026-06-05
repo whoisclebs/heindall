@@ -22,6 +22,7 @@ type Config struct {
 	ANNNProbe         int
 	ANNAmbiguousProbe int
 	ANNRepair         bool
+	PprofEnabled      bool
 }
 
 func LoadConfig() Config {
@@ -38,6 +39,7 @@ func LoadConfig() Config {
 		ANNNProbe:         getenvInt("ANN_NPROBE", 8),
 		ANNAmbiguousProbe: getenvInt("ANN_AMBIGUOUS_NPROBE", 24),
 		ANNRepair:         getenvBool("ANN_REPAIR", true),
+		PprofEnabled:      getenvBool("PPROF_ENABLED", false),
 	}
 }
 
