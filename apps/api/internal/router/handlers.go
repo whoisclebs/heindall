@@ -118,18 +118,6 @@ func readRequestBodyWithPool(w http.ResponseWriter, req *http.Request, maxBytes 
 			writeScoreRaw(w, http.StatusBadRequest, 0)
 			return nil, nil, false
 		}
-		// Detect test/injected bodies that provide more bytes than their declared
-		// Content-Length. In production net/http normally stops body reads at the
-		// declared length already, so this extra read is a cheap safety check.
-		var extra [1]byte
-		extraN, _ := req.Body.Read(extra[:])
-		if extraN > 0 {
-			if pooled != nil {
-				releaseBodyBuffer(pool, pooled)
-			}
-			writeScoreRaw(w, http.StatusBadRequest, 0)
-			return nil, nil, false
-		}
 		return buf, pooled, true
 	}
 

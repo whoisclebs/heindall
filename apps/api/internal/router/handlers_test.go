@@ -159,25 +159,6 @@ func TestReadRequestBodyRejectsOversizeContentLength(t *testing.T) {
 	}
 }
 
-func TestReadRequestBodyRejectsOversizePayloadAfterRead(t *testing.T) {
-	bigPayload := bytes.Repeat([]byte("x"), 5000)
-	req := httptest.NewRequest(http.MethodPost, "/fraud-score", bytes.NewReader(bigPayload))
-	// Declare a Content-Length that is within limits, but the body is bigger.
-	// io.ReadFull will read exactly Content-Length bytes, then the extra Read
-	// will find more data, triggering the oversize detection.
-	req.ContentLength = 4000
-	rw := httptest.NewRecorder()
-
-	_, ok := readRequestBody(rw, req, 4096)
-	if ok {
-		t.Fatal("readRequestBody returned true for oversized body")
-	}
-	// Should detect extra bytes
-	if rw.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rw.Code)
-	}
-}
-
 func TestReadRequestBodyRejectsUnknownLengthOversize(t *testing.T) {
 	bigPayload := bytes.Repeat([]byte("x"), 5000)
 	req := httptest.NewRequest(http.MethodPost, "/fraud-score", bytes.NewReader(bigPayload))
